@@ -1,0 +1,122 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import { usePathname, useRouter } from 'next/navigation'
+import { createBrowserSupabaseClient } from '@/lib/supabase'
+import { logout } from '@/lib/auth'
+import { useAppStore } from '@/store'
+
+const NAV_LINKS = [
+  { href: '/editor/dashboard', label: 'Dashboard' },
+  { href: '/editor/inbox', label: 'Inbox' },
+  { href: '/editor/published', label: 'Published' },
+  { href: '/editor/threads', label: 'Threads' },
+]
+
+export function EditorNav() {
+  const pathname = usePathname()
+  const router = useRouter()
+  const { currentUser, reset } = useAppStore()
+  const [spaceName, setSpaceName] = useState<string | null>(null)
+  const [pendingCount, setPendingCount] = useState<number>(0)
+  const [confirmLogout, setConfirmLogout] = useState(false)
+
+  useEffect(() => {
+    if (!currentUser?.space_id) return
+    const supabase = createBrowserSupabaseClient()
+
+    supabase
+      .from('industry_spaces')
+      .select('name')
+      .eq('id', currentUser.space_id)
+      .single()
+      .then(({ data }: { data: { name: string } | null }) => {
+        if (data) setSpaceName(data.name)
+      })
+
+    supabase
+      .from('raw_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('space_id', currentUser.space_id)
+      .eq('status', 'pending')
+      .eq('ai_processed', true)
+      .then(({ count }: { count: number | null }) => {
+        setPendingCount(count ?? 0)
+      })
+  }, [currentUser?.space_id])
+
+  async function handleLogout() {
+    await logout(reset)
+    router.push('/login')
+  }
+
+  const firstName = currentUser?.name?.split(' ')[0] ?? ''
+
+  return (
+    <nav className="bg-white border-b border-gray-200 sticky top-0 z-50">
+      <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between gap-6">
+
+        {/* Left: Logo + space badge */}
+        <div className="flex items-center gap-2.5 flex-shrink-0">
+          <Link href="/editor/dashboard" className="text-base font-bold text-slate-900 tracking-tight">
+            Industry Intel
+          </Link>
+          {spaceName && (
+            <span className="text-xs bg-gray-100 text-gray-500 px-2.5 py-0.5 rounded-full font-medium">
+              {spaceName}
+            </span>
+          )}
+        </div>
+
+        {/* Centre: Nav links */}
+        <div className="flex items-center gap-6">
+          {NAV_LINKS.map(({ href, label }) => {
+            const isActive = pathname.startsWith(href)
+            const isInbox = label === 'Inbox'
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={`text-sm font-medium transition-colors pb-0.5 flex items-center gap-1.5 ${
+                  isActive
+                    ? 'text-slate-900 border-b-2 border-slate-900'
+                    : 'text-gray-500 hover:text-slate-700'
+                }`}
+              >
+                {label}
+                {isInbox && pendingCount > 0 && (
+                  <span className="inline-flex items-center justify-center w-4 h-4 text-xs font-bold text-white bg-red-500 rounded-full leading-none">
+                    {pendingCount > 99 ? '99+' : pendingCount}
+                  </span>
+                )}
+              </Link>
+            )
+          })}
+        </div>
+
+        {/* Right: Name + logout */}
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {firstName && (
+            <span className="text-sm text-gray-400">{firstName}</span>
+          )}
+          {!confirmLogout ? (
+            <button
+              onClick={() => setConfirmLogout(true)}
+              className="text-sm text-red-500 hover:text-red-700 transition-colors"
+            >
+              Log out
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-gray-500">Sure?</span>
+              <button onClick={handleLogout} className="text-red-600 font-medium hover:text-red-800">Yes</button>
+              <button onClick={() => setConfirmLogout(false)} className="text-gray-400 hover:text-gray-600">No</button>
+            </div>
+          )}
+        </div>
+
+      </div>
+    </nav>
+  )
+}
