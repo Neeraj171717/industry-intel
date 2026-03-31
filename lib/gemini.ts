@@ -196,6 +196,7 @@ If no tags match, reply with: []`
   }
 
   const validTagIds = new Set(tags.map((t) => t.id))
+  const BARE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
   const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
 
   // Normalise tag_id — model can return three formats:
@@ -206,16 +207,18 @@ If no tags match, reply with: []`
     if (typeof s.tag_id !== 'string') return s
 
     const trimmed = s.tag_id.trim()
+    console.log(`[suggestTags] Processing tag_id: "${trimmed}"`)
 
     // Case 1: already a bare UUID — use directly
-    if (UUID_RE.test(trimmed)) {
+    if (BARE_UUID_RE.test(trimmed)) {
+      console.log(`[suggestTags] Case 1 — bare UUID: "${trimmed}"`)
       return { ...s, tag_id: trimmed }
     }
 
     // Case 2: UUID embedded in the string (e.g. "SEO (uuid)")
     const uuidMatch = trimmed.match(UUID_RE)
     if (uuidMatch) {
-      console.log(`[suggestTags] Extracted UUID from "${trimmed}" → "${uuidMatch[0]}"`)
+      console.log(`[suggestTags] Case 2 — extracted UUID from "${trimmed}" → "${uuidMatch[0]}"`)
       return { ...s, tag_id: uuidMatch[0] }
     }
 

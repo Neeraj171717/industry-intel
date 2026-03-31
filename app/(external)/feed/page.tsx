@@ -13,6 +13,7 @@ interface FeedArticle {
   id: string
   headline: string
   summary: string | null
+  featured_image: string | null
   content_type: string | null
   severity: string | null
   published_at: string
@@ -153,6 +154,19 @@ function ArticleCard({ article, isTop, stackIndex, isSaved, onExit, onBookmark, 
             </div>
           </motion.div>
         </>
+      )}
+
+      {/* ── Featured image ─────────────────────────────────────────────── */}
+      {article.featured_image && (
+        <div className="w-full h-[180px] overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={article.featured_image}
+            alt=""
+            className="w-full h-full object-cover"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+          />
+        </div>
       )}
 
       {/* ── Card content ──────────────────────────────────────────────────── */}

@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     // ── 2. Fetch source fields from raw_items ───────────────────────────────
     const { data: rawItem } = await supabaseAdmin
       .from('raw_items')
-      .select('source_url, source_name')
+      .select('source_url, source_name, featured_image')
       .eq('id', payload.raw_item_id)
       .single()
 
@@ -74,6 +74,7 @@ export async function POST(req: NextRequest) {
         impact: payload.impact,
         source_url: rawItem?.source_url ?? null,
         source_name: rawItem?.source_name ?? null,
+        featured_image: rawItem?.featured_image ?? null,
         status: 'published',
         published_at: new Date().toISOString(),
       })

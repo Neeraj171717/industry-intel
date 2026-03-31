@@ -126,18 +126,11 @@ export default function SettingsPage() {
       name: spaceName.trim(),
       description: spaceDescription.trim() || null,
     }
-    console.log('[Settings] saveSpaceInfo → sending UPDATE to industry_spaces:', {
-      spaceId: currentUser!.space_id,
-      payload,
-    })
-
     const { data, error: e } = await createBrowserSupabaseClient()
       .from('industry_spaces')
       .update(payload)
       .eq('id', currentUser!.space_id!)
       .select('id, name, description')
-
-    console.log('[Settings] saveSpaceInfo ← response:', { data, error: e })
 
     setSpaceSaving(false)
 
@@ -171,14 +164,10 @@ export default function SettingsPage() {
       ...settings,
       updated_at: new Date().toISOString(),
     }
-    console.log('[Settings] saveSettings → sending UPSERT to space_settings:', payload)
-
     const { data, error: e } = await createBrowserSupabaseClient()
       .from('space_settings')
       .upsert(payload, { onConflict: 'space_id' })
       .select()
-
-    console.log('[Settings] saveSettings ← response:', { data, error: e })
 
     setSaving(false)
 

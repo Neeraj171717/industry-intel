@@ -404,7 +404,7 @@ export default function DraftBuilderPage() {
 
       // ── Parallel fetch: suggestions, tags, threads ──────────────────────
       const [
-        { data: suggestions, error: suggestionsError },
+        { data: suggestions },
         { data: tags },
         { data: threads },
       ] = await Promise.all([
@@ -415,10 +415,6 @@ export default function DraftBuilderPage() {
         supabase.from('tags').select('*').eq('space_id', spaceId).eq('status', 'active'),
         supabase.from('event_threads').select('*').eq('space_id', spaceId).eq('status', 'active').order('created_at', { ascending: false }),
       ])
-
-      console.log('[DraftBuilder] ai_suggestions fetch — raw_item_id:', rawItemId)
-      console.log('[DraftBuilder] ai_suggestions error:', suggestionsError?.message ?? 'none')
-      console.log('[DraftBuilder] ai_suggestions rows returned:', suggestions?.length ?? 0, suggestions)
 
       const tagsArr = (tags as Tag[]) ?? []
       const threadsArr = (threads as EventThread[]) ?? []
@@ -437,11 +433,7 @@ export default function DraftBuilderPage() {
         thread: s.suggestion_type === 'thread' ? threadsById[s.suggested_value] : undefined,
       }))
 
-      console.log('[DraftBuilder] about to call setAiSuggestions — enriched.length:', enriched.length)
       setAiSuggestions(enriched)
-      console.log('[DraftBuilder] enriched suggestions:', enriched.length, enriched.map((s) => ({ id: s.id, type: s.suggestion_type, value: s.suggested_value, tagFound: !!s.tag, tagName: s.tag?.name, confidence: s.confidence_score, accepted: s.accepted })))
-      console.log('[DraftBuilder] tagsById key count:', Object.keys(tagsById).length, 'keys sample:', Object.keys(tagsById).slice(0, 3))
-      console.log('[DraftBuilder] tagSuggestions count:', enriched.filter((s) => s.suggestion_type === 'tag').length)
 
       // ── Restore accepted/rejected state from DB (source of truth) ───────
       const dbAccepted = new Set(suggestionsArr.filter((s) => s.accepted === true).map((s) => s.id))
@@ -756,8 +748,6 @@ export default function DraftBuilderPage() {
   const tagSuggestions = aiSuggestions.filter((s) => s.suggestion_type === 'tag')
   const rejectedTagSuggestions = tagSuggestions.filter((s) => rejectedSuggestions.has(s.id))
   const threadSuggestions = aiSuggestions.filter((s) => s.suggestion_type === 'thread')
-
-  console.log('[DraftBuilder] render — aiSuggestions.length:', aiSuggestions.length, 'loading:', loading, 'tagSuggestions:', tagSuggestions.length)
 
   // ─── Loading skeleton ────────────────────────────────────────────────────────
   if (sessionLoading || (loading && currentUser)) {

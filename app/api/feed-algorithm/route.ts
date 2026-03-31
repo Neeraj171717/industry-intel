@@ -48,6 +48,7 @@ async function enrichPage(
     id:               a.id,
     headline:         a.title as string,
     summary:          (a.summary as string | null) ?? null,
+    featured_image:   (a.featured_image as string | null) ?? null,
     content_type:     a.content_type as string,
     severity:         a.severity as string,
     published_at:     a.published_at as string,
@@ -129,7 +130,7 @@ export async function GET(req: NextRequest) {
     if (followedTagIds.length === 0) {
       const { data: recent } = await supabaseAdmin
         .from('final_items')
-        .select('id, title, summary, content_type, severity, published_at, author_id, thread_id, source_name, source_url')
+        .select('id, title, summary, content_type, severity, published_at, author_id, thread_id, source_name, source_url, featured_image')
         .eq('space_id', spaceId)
         .not('id', 'in', `(${Array.from(suppressedItemIds).join(',') || 'null'})`)
         .order('published_at', { ascending: false })
@@ -151,7 +152,7 @@ export async function GET(req: NextRequest) {
     // Fetch all candidate articles for this space
     const { data: allItems } = await supabaseAdmin
       .from('final_items')
-      .select('id, title, summary, content_type, severity, published_at, author_id, thread_id, source_name, source_url')
+      .select('id, title, summary, content_type, severity, published_at, author_id, thread_id, source_name, source_url, featured_image')
       .eq('space_id', spaceId)
 
     // Fetch tag associations for candidates

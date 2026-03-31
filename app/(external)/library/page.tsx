@@ -10,6 +10,7 @@ interface LibraryItem {
   id: string
   title: string
   summary: string
+  featured_image: string | null
   severity: string | null
   content_type: string | null
   published_at: string
@@ -78,7 +79,7 @@ export default function LibraryPage() {
         .select(`
           interacted_at,
           final_item:final_items(
-            id, title, summary, severity, content_type, published_at, thread_id, source_name, source_url,
+            id, title, summary, featured_image, severity, content_type, published_at, thread_id, source_name, source_url,
             author:users!final_items_author_id_fkey(name)
           )
         `)
@@ -101,6 +102,7 @@ export default function LibraryPage() {
             thread_id:     fi.thread_id as string | null,
             interacted_at: row.interacted_at as string,
             author_name:   author?.name ?? null,
+            featured_image: fi.featured_image as string | null,
             source_name:   fi.source_name as string | null,
             source_url:    fi.source_url as string | null,
           }
@@ -204,9 +206,22 @@ export default function LibraryPage() {
                 <button
                   key={item.id}
                   onClick={() => handleRead(item)}
-                  className={`w-full text-left bg-[#161B22] rounded-xl p-4 border-l-4 ${borderClass} border border-[#1E2530] hover:border-[#2C3444] transition-colors`}
+                  className={`w-full text-left bg-[#161B22] rounded-xl overflow-hidden border-l-4 ${borderClass} border border-[#1E2530] hover:border-[#2C3444] transition-colors`}
                 >
-                  <div className="flex items-start gap-3">
+                  {/* Featured image */}
+                  {item.featured_image && (
+                    <div className="w-full h-[100px] overflow-hidden">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={item.featured_image}
+                        alt=""
+                        className="w-full h-full object-cover"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex items-start gap-3 p-4">
                     {/* Severity dot */}
                     <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${dotClass}`} />
 

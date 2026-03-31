@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { FileText, Shield, Play, Sparkles, CheckCircle, AlertCircle, Loader2, ExternalLink } from 'lucide-react'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
@@ -75,6 +75,7 @@ export default function ContributorSubmitPage() {
   const [sourceName, setSourceName] = useState('')
   const [content, setContent] = useState('')
   const [notes, setNotes] = useState('')
+  const [featuredImage, setFeaturedImage] = useState<string | null>(null)
 
   // UI state
   const [urlTouched, setUrlTouched] = useState(false)
@@ -85,6 +86,13 @@ export default function ContributorSubmitPage() {
   const [serverError, setServerError] = useState<string | null>(null)
   const [showSourcesModal, setShowSourcesModal] = useState(false)
   const [spaceName, setSpaceName] = useState<string | null>(null)
+
+  // Metadata fetch state
+  const [metaFetching, setMetaFetching] = useState(false)
+  const [metaStatus, setMetaStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [metaErrorCode, setMetaErrorCode] = useState<string | null>(null)
+  const [notesAiGenerated, setNotesAiGenerated] = useState(false)
+  const lastFetchedUrl = useRef('')
 
   const contentRef = useRef<HTMLTextAreaElement>(null)
   const notesRef = useRef<HTMLTextAreaElement>(null)
@@ -97,6 +105,74 @@ export default function ContributorSubmitPage() {
       .from('industry_spaces').select('name').eq('id', currentUser.space_id).single()
       .then(({ data }: { data: { name: string } | null }) => { if (data) setSpaceName(data.name) })
   }, [currentUser])
+
+  // ─── Auto-fetch metadata from URL ─────────────────────────────────────────
+  const fetchMetadata = useCallback(async (url: string) => {
+    if (!isValidUrl(url) || url === lastFetchedUrl.current) return
+    lastFetchedUrl.current = url
+    setMetaFetching(true)
+    setMetaStatus('idle')
+
+    try {
+      const res = await fetch('/api/fetch-url-metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      })
+      const data = await res.json()
+
+      // Pre-fill content with full article text, falling back to description
+      const extractedText = data.fullText ?? data.description
+      if (extractedText && !content.trim()) {
+        setContent(extractedText)
+        // Allow DOM to update before auto-expanding
+        setTimeout(() => {
+          if (contentRef.current) {
+            contentRef.current.style.height = 'auto'
+            contentRef.current.style.height = `${contentRef.current.scrollHeight}px`
+          }
+        }, 0)
+      }
+      if (data.siteName && !sourceName.trim()) {
+        setSourceName(data.siteName)
+      }
+      if (data.image) {
+        setFeaturedImage(data.image)
+      }
+      if (data.editorNotes && !notes.trim()) {
+        setNotes(data.editorNotes)
+        setNotesAiGenerated(true)
+        setTimeout(() => {
+          if (notesRef.current) {
+            notesRef.current.style.height = 'auto'
+            notesRef.current.style.height = `${notesRef.current.scrollHeight}px`
+          }
+        }, 0)
+      }
+
+      if (data.errorCode) {
+        setMetaStatus('error')
+        setMetaErrorCode(data.errorCode)
+      } else if (data.title || data.fullText || data.description || data.siteName) {
+        setMetaStatus('success')
+        setMetaErrorCode(null)
+      } else {
+        setMetaStatus('error')
+        setMetaErrorCode('no_content')
+      }
+    } catch {
+      setMetaStatus('error')
+      setMetaErrorCode(null)
+    } finally {
+      setMetaFetching(false)
+    }
+  }, [content, sourceName, notes])
+
+  useEffect(() => {
+    if (!isValidUrl(sourceUrl) || sourceUrl === lastFetchedUrl.current) return
+    const timer = setTimeout(() => fetchMetadata(sourceUrl), 800)
+    return () => clearTimeout(timer)
+  }, [sourceUrl, fetchMetadata])
 
   // Warn before leaving with unsaved content
   useEffect(() => {
@@ -145,8 +221,6 @@ export default function ContributorSubmitPage() {
     setUrlTouched(true)
     setContentTouched(true)
 
-    console.log('[Submit] canSubmit:', canSubmit, '| sessionLoading:', sessionLoading, '| currentUser:', currentUser?.id ?? 'null')
-
     if (!canSubmit) return
 
     if (!currentUser) {
@@ -165,6 +239,7 @@ export default function ContributorSubmitPage() {
         source_type: sourceType,
         source_url: sourceUrl.trim(),
         source_name: sourceName.trim() || null,
+        featured_image: featuredImage,
         raw_text: content.trim(),
         notes: notes.trim() || null,
         status: 'pending',
@@ -187,11 +262,16 @@ export default function ContributorSubmitPage() {
     setSourceName('')
     setContent('')
     setNotes('')
+    setFeaturedImage(null)
     setUrlTouched(false)
     setContentTouched(false)
     setSourceTypeTouched(false)
     setSuccess(false)
     setServerError(null)
+    setMetaStatus('idle')
+    setMetaErrorCode(null)
+    setNotesAiGenerated(false)
+    lastFetchedUrl.current = ''
   }
 
   // ─── Success state ───────────────────────────────────────────────────────────
@@ -311,19 +391,48 @@ export default function ContributorSubmitPage() {
               Source URL <span className="text-red-500">*</span>
             </label>
             <p className="text-xs text-gray-400 mb-2">The direct link to the original content</p>
-            <input
-              id="sourceUrl"
-              type="url"
-              value={sourceUrl}
-              onChange={(e) => setSourceUrl(e.target.value)}
-              onBlur={() => setUrlTouched(true)}
-              placeholder="https://www.example.com/article"
-              className={`w-full h-12 rounded-lg border px-4 text-sm text-slate-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition ${
-                urlError ? 'border-red-400' : 'border-gray-300'
-              }`}
-              disabled={submitting}
-            />
+            <div className="relative">
+              <input
+                id="sourceUrl"
+                type="url"
+                value={sourceUrl}
+                onChange={(e) => setSourceUrl(e.target.value)}
+                onBlur={() => setUrlTouched(true)}
+                placeholder="https://www.example.com/article"
+                className={`w-full h-12 rounded-lg border px-4 pr-10 text-sm text-slate-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent transition ${
+                  urlError ? 'border-red-400' : 'border-gray-300'
+                }`}
+                disabled={submitting}
+              />
+              {metaFetching && (
+                <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                  <Loader2 size={16} className="animate-spin text-gray-400" />
+                </span>
+              )}
+            </div>
             {urlError && <p className="mt-1.5 text-sm text-red-600">{urlError}</p>}
+            {metaStatus === 'success' && (
+              <div className="mt-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 flex items-center gap-2">
+                <CheckCircle size={12} className="text-green-500 flex-shrink-0" />
+                <p className="text-xs text-green-700">Metadata fetched — please review and edit</p>
+              </div>
+            )}
+            {metaStatus === 'error' && (
+              <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-2">
+                <AlertCircle size={12} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-amber-700">
+                  {metaErrorCode === 'blocked'
+                    ? 'This website does not allow automated content fetching. Please copy and paste the article text manually.'
+                    : metaErrorCode === 'unreachable'
+                    ? 'Could not reach this URL. Please check the link is correct and try again.'
+                    : metaErrorCode === 'timeout'
+                    ? 'This website is taking too long to respond. Please paste the content manually.'
+                    : metaErrorCode === 'no_content'
+                    ? 'Could not extract content from this page. Please paste the article text manually.'
+                    : 'Could not fetch metadata — please paste content manually.'}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* ── Field 2b: Source Name ────────────────────────────────────── */}
@@ -382,10 +491,18 @@ export default function ContributorSubmitPage() {
 
           {/* ── Field 4: Notes for Editor ────────────────────────────────── */}
           <div className="mb-6">
-            <label htmlFor="notes" className="block text-sm font-semibold text-slate-700 mb-1">
-              Notes for Editor
-              <span className="ml-2 text-xs text-gray-400 font-normal">optional</span>
-            </label>
+            <div className="flex items-center gap-2 mb-1">
+              <label htmlFor="notes" className="block text-sm font-semibold text-slate-700">
+                Notes for Editor
+                <span className="ml-2 text-xs text-gray-400 font-normal">optional</span>
+              </label>
+              {notesAiGenerated && (
+                <span className="inline-flex items-center gap-1 bg-teal-50 border border-teal-200 text-teal-700 text-[11px] font-medium px-2 py-0.5 rounded-full">
+                  <Sparkles size={10} />
+                  AI generated — please review
+                </span>
+              )}
+            </div>
             <p className="text-xs text-gray-400 mb-2">
               Why does this matter? Who in the industry will be affected? Any context the editor should know?
             </p>
@@ -408,13 +525,23 @@ export default function ContributorSubmitPage() {
               </span>
             </div>
 
+            {/* AI notes loading indicator */}
+            {metaFetching && !notes.trim() && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-gray-400">
+                <Loader2 size={12} className="animate-spin" />
+                Generating editor notes...
+              </div>
+            )}
+
             {/* Encouragement box */}
-            <div className="mt-3 bg-teal-50 border border-teal-200 rounded-lg px-4 py-3 flex items-start gap-2">
-              <CheckCircle size={14} className="text-teal-500 mt-0.5 flex-shrink-0" />
-              <p className="text-xs text-teal-700">
-                Contributors who include detailed notes have a <span className="font-semibold">40% higher publication rate</span>.
-              </p>
-            </div>
+            {!notesAiGenerated && !metaFetching && (
+              <div className="mt-3 bg-teal-50 border border-teal-200 rounded-lg px-4 py-3 flex items-start gap-2">
+                <CheckCircle size={14} className="text-teal-500 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-teal-700">
+                  Contributors who include detailed notes have a <span className="font-semibold">40% higher publication rate</span>.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* ── Submit button ────────────────────────────────────────────── */}
