@@ -110,10 +110,12 @@ export async function GET(req: NextRequest) {
         suppressedItemIds.add(ix.final_item_id)
         if (ix.thread_id) ignoredThreadIds.add(ix.thread_id)
       }
-      // Rule 4: saved stays in feed until read — do NOT suppress saved items
+      if (ix.action === 'saved') {
+        suppressedItemIds.add(ix.final_item_id)
+      }
     }
 
-    console.log(`[feed] Step 1 — suppressed=${suppressedItemIds.size}, ignoredThreads=${ignoredThreadIds.size}, readThreads=${readThreadIds.size}`)
+    console.log(`[feed] Step 1 — suppressed=${suppressedItemIds.size} (read+ignored+saved), ignoredThreads=${ignoredThreadIds.size}, readThreads=${readThreadIds.size}`)
 
     // ════════════════════════════════════════════════════════════════════════
     // STEP 2 — Eligibility
