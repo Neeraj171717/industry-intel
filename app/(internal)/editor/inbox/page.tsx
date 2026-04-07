@@ -154,6 +154,8 @@ export default function EditorInboxPage() {
         source_url: string | null
         raw_text: string
         notes: string | null
+        title: string | null
+        description: string | null
         status: 'pending' | 'in_review' | 'processed' | 'rejected'
         ai_processed: boolean
         created_at: string

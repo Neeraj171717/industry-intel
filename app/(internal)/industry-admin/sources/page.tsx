@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Plus, Pencil, Trash2, AlertCircle, Globe, ExternalLink } from 'lucide-react'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
 import { useSession } from '@/lib/useSession'
-import { timeAgo, SOURCE_TYPE_CONFIG, CREDIBILITY_CONFIG } from '@/lib/admin'
+import { SOURCE_TYPE_CONFIG, CREDIBILITY_CONFIG } from '@/lib/admin'
 import type { Source } from '@/types'
 
 type SourceType = 'blog' | 'official' | 'youtube' | 'ai_tool' | 'other'
@@ -96,7 +96,7 @@ function SourceModal({
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Credibility</label>
-              <select value={credibility} onChange={e => setCredibility(e.target.value)}
+              <select value={credibility} onChange={e => setCredibility(e.target.value as 'high' | 'medium' | 'low')}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-300">
                 <option value="high">High</option>
                 <option value="medium">Medium</option>

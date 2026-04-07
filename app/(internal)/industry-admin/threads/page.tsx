@@ -186,8 +186,8 @@ export default function ThreadsPage() {
       return
     }
 
-    const threadIds = rawThreads.map((t: any) => t.id)
-    const userIds = [...new Set(rawThreads.map((t: any) => t.created_by).filter(Boolean))]
+    const threadIds = rawThreads.map((t: Record<string, string>) => t.id)
+    const userIds = Array.from(new Set(rawThreads.map((t: Record<string, string>) => t.created_by).filter(Boolean)))
 
     const [{ data: items }, { data: users }] = await Promise.all([
       supabase
@@ -199,18 +199,18 @@ export default function ThreadsPage() {
       supabase.from('users').select('id, full_name').in('id', userIds),
     ])
 
-    const userMap = Object.fromEntries((users ?? []).map((u: any) => [u.id, u.full_name]))
+    const userMap = Object.fromEntries((users ?? []).map((u: { id: string; full_name: string }) => [u.id, u.full_name]))
 
     const countMap: Record<string, number> = {}
     const lastMap: Record<string, string> = {}
-    ;(items ?? []).forEach((i: any) => {
+    ;(items ?? []).forEach((i: { event_thread_id: string; published_at: string }) => {
       countMap[i.event_thread_id] = (countMap[i.event_thread_id] ?? 0) + 1
       if (!lastMap[i.event_thread_id] || i.published_at > lastMap[i.event_thread_id]) {
         lastMap[i.event_thread_id] = i.published_at
       }
     })
 
-    setThreads(rawThreads.map((t: any) => ({
+    setThreads(rawThreads.map((t: Record<string, string>) => ({
       id: t.id,
       title: t.title,
       description: t.description,

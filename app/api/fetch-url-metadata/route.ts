@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { recordTokenUsage, extractOpenRouterUsage } from '@/lib/token-usage'
 
 interface UrlMetadata {
   title: string | null
@@ -166,6 +167,10 @@ export async function POST(req: NextRequest) {
     let editorNotes: string | null = null
 
     if (finalTitle && finalDescription && process.env.OPENROUTER_API_KEY) {
+      console.log('[EditorNotes] Starting generation...')
+      const notesController = new AbortController()
+      const notesTimeout = setTimeout(() => notesController.abort(), 25000)
+
       try {
         const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
           method: 'POST',
@@ -183,16 +188,37 @@ export async function POST(req: NextRequest) {
             ],
             max_tokens: 300,
           }),
-          signal: AbortSignal.timeout(10000),
+          signal: notesController.signal,
         })
 
+        // Clear timeout after response headers arrive — body reading has no time pressure
+        clearTimeout(notesTimeout)
+        console.log('[EditorNotes] Response received — status:', aiRes.status)
+
         if (aiRes.ok) {
-          const aiData = await aiRes.json()
+          const aiRaw = await aiRes.text()
+          const aiData = JSON.parse(aiRaw)
           const text = aiData.choices?.[0]?.message?.content?.trim()
-          if (text) editorNotes = text
+          if (text) {
+            editorNotes = text
+            console.log('[EditorNotes] Notes generated successfully —', text.length, 'chars')
+
+            // Record token usage (fire-and-forget)
+            const notesPrompt = `Article Title: ${finalTitle}\nArticle Summary: ${finalDescription}`
+            const usage = extractOpenRouterUsage({ ...aiData, _promptLength: Math.ceil(notesPrompt.length / 4) })
+            recordTokenUsage({
+              jobType: 'editor_notes', model: 'arcee-ai/trinity-large-preview:free',
+              promptTokens: usage.promptTokens, completionTokens: usage.completionTokens,
+            }).catch(() => {})
+          } else {
+            console.log('[EditorNotes] Generation failed — empty content in response')
+          }
+        } else {
+          console.log('[EditorNotes] Generation failed — HTTP', aiRes.status)
         }
       } catch {
-        // Non-fatal — leave editorNotes null
+        clearTimeout(notesTimeout)
+        console.log('[EditorNotes] Generation failed — leaving empty')
       }
     }
 

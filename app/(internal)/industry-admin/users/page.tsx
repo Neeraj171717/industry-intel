@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Plus, MoreHorizontal, Search, AlertCircle, Users as UsersIcon } from 'lucide-react'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
 import { useSession } from '@/lib/useSession'
-import { timeAgo, formatDate, ROLE_CONFIG, USER_STATUS_CONFIG } from '@/lib/admin'
+import { timeAgo, ROLE_CONFIG, USER_STATUS_CONFIG } from '@/lib/admin'
 import type { User } from '@/types'
 
 type FilterTab = 'all' | 'editor' | 'contributor' | 'user' | 'pending' | 'suspended'
@@ -155,7 +155,7 @@ function ChangeRoleModal({ user, onConfirm, onClose, saving }: { user: User; onC
           <option value="contributor">Contributor</option>
         </select>
         <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 mb-5">
-          <p className="text-xs text-blue-700">Changing this user's role will change what they can access immediately.</p>
+          <p className="text-xs text-blue-700">Changing this user&apos;s role will change what they can access immediately.</p>
         </div>
         <div className="flex gap-3">
           <button onClick={onClose} disabled={saving} className="flex-1 border-2 border-gray-200 text-gray-600 text-sm font-semibold py-2.5 rounded-xl hover:bg-gray-50 disabled:opacity-50">Cancel</button>

@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import {
   AlertCircle, Sparkles, CheckCircle, XCircle, AlertTriangle,
-  ExternalLink, X, Plus, ChevronDown,
+  ExternalLink, X, Plus, ChevronDown, Loader2, RotateCcw,
 } from 'lucide-react'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
 import { useSession } from '@/lib/useSession'
@@ -295,6 +295,13 @@ export default function DraftBuilderPage() {
   const [showRejectedTags, setShowRejectedTags] = useState(false)
   const tagInputRef = useRef<HTMLInputElement>(null)
 
+  // ── Auto-draft state ──────────────────────────────────────────────────────
+  const [draftPreFilled, setDraftPreFilled] = useState(false)
+  const [bodyGenerating, setBodyGenerating] = useState(false)
+  const [bodyAiGenerated, setBodyAiGenerated] = useState(false)
+  const [bodyAiFailed, setBodyAiFailed] = useState(false)
+  const generateCalled = useRef(false)
+
   // ── Data loading ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (sessionLoading || !currentUser || !rawItemId) return
@@ -304,9 +311,9 @@ export default function DraftBuilderPage() {
 
   // ── Save to localStorage on every field change ───────────────────────────────
   // Runs immediately whenever any draft field changes — no timer, no data loss on tab switch.
-  // Guard: skip while loading to avoid overwriting a restored draft with empty initial values.
+  // Guard: skip while loading or while AI is still generating body to avoid saving empty body.
   useEffect(() => {
-    if (!rawItemId || loading) return
+    if (!rawItemId || loading || bodyGenerating) return
     const draft: SavedDraft = {
       headline: draftHeadline,
       summary: draftSummary,
@@ -319,7 +326,7 @@ export default function DraftBuilderPage() {
       tagIds: appliedTags.map((t) => t.id),
     }
     localStorage.setItem(draftKey(rawItemId), JSON.stringify(draft))
-  }, [rawItemId, loading, draftHeadline, draftSummary, draftBody, selectedContentType, selectedSeverity, selectedLocality, selectedImpact, selectedThreadId, appliedTags])
+  }, [rawItemId, loading, bodyGenerating, draftHeadline, draftSummary, draftBody, selectedContentType, selectedSeverity, selectedLocality, selectedImpact, selectedThreadId, appliedTags])
 
   // ── Clear draft from localStorage ────────────────────────────────────────────
   function clearDraft() {
@@ -334,7 +341,72 @@ export default function DraftBuilderPage() {
     setSelectedThreadId(null)
     setAppliedTags([])
     setValidationErrors([])
+    setDraftPreFilled(false)
+    setBodyAiGenerated(false)
+    setBodyAiFailed(false)
+    generateCalled.current = false
   }
+
+  // ── Reset auto-draft (clears AI-generated content only) ─────────────────────
+  function resetAutoDraft() {
+    setDraftHeadline('')
+    setDraftSummary('')
+    setDraftBody('')
+    setSelectedContentType('')
+    setSelectedSeverity('')
+    setSelectedLocality('')
+    setSelectedImpact('')
+    setDraftPreFilled(false)
+    setBodyAiGenerated(false)
+    setBodyAiFailed(false)
+    generateCalled.current = false
+  }
+
+  // ── Phase 2: Generate article body via OpenRouter ──────────────────────────
+  const generateArticleBody = useCallback(async (rawText: string) => {
+    // Prevent double-call in React strict mode
+    if (generateCalled.current) {
+      console.log('[AutoDraft] Skipping — already called')
+      return
+    }
+    generateCalled.current = true
+    console.log('[AutoDraft] Starting article body generation...')
+
+    setBodyGenerating(true)
+    setBodyAiFailed(false)
+
+    try {
+      const res = await fetch('/api/generate-article-body', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rawText, spaceId: currentUser?.space_id }),
+      })
+
+      console.log('[AutoDraft] API response status:', res.status)
+
+      if (!res.ok) throw new Error(`API error: ${res.status}`)
+
+      const data = await res.json()
+      console.log('[AutoDraft] API response data:', data)
+      console.log('[AutoDraft] Generated body text:', data.body)
+      console.log('[AutoDraft] Body length:', data.body?.length ?? 0)
+
+      if (data.body) {
+        console.log('[AutoDraft] Setting draftBody state...')
+        setDraftBody(data.body)
+        setBodyAiGenerated(true)
+        console.log('[AutoDraft] draftBody state updated successfully')
+      } else {
+        console.log('[AutoDraft] No body in response — marking as failed')
+        setBodyAiFailed(true)
+      }
+    } catch (err) {
+      console.error('[AutoDraft] Error:', err)
+      setBodyAiFailed(true)
+    } finally {
+      setBodyGenerating(false)
+    }
+  }, [])
 
   // ── Manual save (button) ──────────────────────────────────────────────────────
   function saveDraftToLocalStorage() {
@@ -461,27 +533,31 @@ export default function DraftBuilderPage() {
 
       // ── Pre-populate from localStorage if saved draft exists ────────────
       const savedRaw = localStorage.getItem(draftKey(rawItemId))
-      if (savedRaw) {
-        try {
-          const saved: SavedDraft = JSON.parse(savedRaw)
-          setDraftHeadline(saved.headline ?? '')
-          setDraftSummary(saved.summary ?? '')
-          setDraftBody(saved.body ?? '')
-          setSelectedContentType(saved.contentType ?? '')
-          setSelectedSeverity(saved.severity ?? '')
-          setSelectedLocality(saved.locality ?? '')
-          setSelectedImpact(saved.impact ?? '')
-          setSelectedThreadId(saved.threadId ?? null)
-          // Re-attach tags: union of localStorage tags + DB-accepted AI tag suggestions
-          const savedTagSet = new Set(saved.tagIds ?? [])
-          const dbAcceptedTags = enriched
-            .filter((s) => s.suggestion_type === 'tag' && s.tag && s.accepted === true)
-            .map((s) => s.tag!)
-          dbAcceptedTags.forEach((t) => savedTagSet.add(t.id))
-          const restoredTags = tagsArr.filter((t) => savedTagSet.has(t.id))
-          setAppliedTags(restoredTags)
-        } catch {
-          // Ignore corrupt draft
+      const saved: SavedDraft | null = savedRaw ? (() => { try { return JSON.parse(savedRaw) } catch { return null } })() : null
+      const hasSubstantialDraft = saved && (saved.headline || saved.summary || saved.body)
+
+      if (hasSubstantialDraft) {
+        setDraftHeadline(saved.headline ?? '')
+        setDraftSummary(saved.summary ?? '')
+        setDraftBody(saved.body ?? '')
+        setSelectedContentType(saved.contentType ?? '')
+        setSelectedSeverity(saved.severity ?? '')
+        setSelectedLocality(saved.locality ?? '')
+        setSelectedImpact(saved.impact ?? '')
+        setSelectedThreadId(saved.threadId ?? null)
+        // Re-attach tags: union of localStorage tags + DB-accepted AI tag suggestions
+        const savedTagSet = new Set(saved.tagIds ?? [])
+        const dbAcceptedTags = enriched
+          .filter((s) => s.suggestion_type === 'tag' && s.tag && s.accepted === true)
+          .map((s) => s.tag!)
+        dbAcceptedTags.forEach((t) => savedTagSet.add(t.id))
+        const restoredTags = tagsArr.filter((t) => savedTagSet.has(t.id))
+        setAppliedTags(restoredTags)
+
+        // If localStorage has headline/summary but no body, still generate AI body
+        if (!saved.body) {
+          setDraftPreFilled(true)
+          generateArticleBody(item.raw_text)
         }
       } else {
         // No localStorage — check if DB already has accepted suggestions (returning editor)
@@ -529,6 +605,41 @@ export default function DraftBuilderPage() {
               )
             )
           }
+
+          // ── Phase 1: Pre-fill draft from raw_items data (zero AI cost) ────
+          // Headline: title column → first line of raw_text → source_name
+          const firstLine = item.raw_text.split('\n')[0]?.trim().slice(0, 100) ?? ''
+
+          const prefillHeadline = item.title || firstLine || item.source_name || ''
+          if (prefillHeadline) setDraftHeadline(prefillHeadline)
+
+          // Summary: description with fallback to raw_text
+          console.log('[AutoDraft] raw_items.description:', item.description ? `"${item.description.slice(0, 80)}..." (${item.description.length} chars)` : 'NULL/empty')
+          const rawDescription = item.description?.trim()
+          if (rawDescription) {
+            let summary = rawDescription
+            const headline = prefillHeadline.trim()
+            if (headline && summary.toLowerCase().startsWith(headline.toLowerCase())) {
+              summary = summary.slice(headline.length).replace(/^[\s\-–—:,.|]+/, '').trim()
+            }
+            if (summary) setDraftSummary(summary.slice(0, 400))
+          } else {
+            // Fallback: first 300 characters of raw_text
+            const fallback = item.raw_text.trim().slice(0, 300)
+            console.log('[AutoDraft] Using raw_text fallback for summary:', fallback.slice(0, 80) + '...')
+            if (fallback) setDraftSummary(fallback)
+          }
+
+          // Defaults for metadata dropdowns
+          if (!selectedContentType) setSelectedContentType('news_update')
+          if (!severityTagSuggestion?.tag) setSelectedSeverity('medium')
+          setSelectedLocality('global')
+          setSelectedImpact('informational')
+
+          setDraftPreFilled(true)
+
+          // ── Phase 2: Generate AI article body in background ────────────────
+          generateArticleBody(item.raw_text)
         }
       }
     } catch (err) {
@@ -870,9 +981,27 @@ export default function DraftBuilderPage() {
         {/* ── CENTRE PANEL: Draft form ────────────────────────────────────────── */}
         <div className="w-1/2 overflow-y-auto border-r border-gray-200 bg-white">
           <div className="p-6">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">
-              Write Article
-            </p>
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">
+                Write Article
+              </p>
+              {draftPreFilled && (
+                <button
+                  onClick={resetAutoDraft}
+                  className="flex items-center gap-1 text-xs text-gray-400 hover:text-slate-600 transition-colors"
+                >
+                  <RotateCcw size={11} />
+                  Reset Draft
+                </button>
+              )}
+            </div>
+
+            {/* Pre-fill banner */}
+            {draftPreFilled && (
+              <div className="mb-4 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                <p className="text-xs text-gray-500">Draft pre-filled from submission data — please review and edit</p>
+              </div>
+            )}
 
             {/* Validation errors */}
             {publishAttempted && validationErrors.length > 0 && (
@@ -928,19 +1057,39 @@ export default function DraftBuilderPage() {
 
             {/* Body */}
             <div className="mb-5">
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                Article Body
-              </label>
-              <textarea
-                value={draftBody}
-                onChange={(e) => setDraftBody(e.target.value)}
-                placeholder="Write the full article…"
-                rows={12}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-slate-800 resize-y focus:outline-none focus:ring-2 focus:ring-slate-300 leading-relaxed"
-              />
-              <p className="text-xs text-gray-400 mt-1 text-right">
-                {draftBody.length} chars
-              </p>
+              <div className="flex items-center gap-2 mb-1.5">
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  Article Body
+                </label>
+                {bodyAiGenerated && (
+                  <span className="inline-flex items-center gap-1 bg-teal-50 border border-teal-200 text-teal-700 text-[10px] font-medium px-1.5 py-0.5 rounded-full">
+                    <Sparkles size={9} />
+                    AI Draft — please review and edit
+                  </span>
+                )}
+              </div>
+              {bodyGenerating ? (
+                <div className="w-full border border-gray-200 rounded-lg px-3 py-8 flex flex-col items-center justify-center gap-2 bg-gray-50">
+                  <Loader2 size={20} className="animate-spin text-teal-500" />
+                  <p className="text-xs text-gray-500">AI is generating article body...</p>
+                </div>
+              ) : (
+                <textarea
+                  value={draftBody}
+                  onChange={(e) => setDraftBody(e.target.value)}
+                  placeholder="Write the full article…"
+                  rows={12}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-slate-800 resize-y focus:outline-none focus:ring-2 focus:ring-slate-300 leading-relaxed"
+                />
+              )}
+              <div className="flex items-center justify-between mt-1">
+                {bodyAiFailed && (
+                  <p className="text-xs text-gray-400">AI draft unavailable — please write manually</p>
+                )}
+                <p className="text-xs text-gray-400 ml-auto text-right">
+                  {draftBody.length} chars
+                </p>
+              </div>
             </div>
 
             {/* Metadata 2×2 grid */}

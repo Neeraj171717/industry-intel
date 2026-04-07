@@ -11,6 +11,7 @@
 
 import { CohereClient } from 'cohere-ai'
 import { supabaseAdmin } from '@/lib/supabase-server'
+import { recordTokenUsage, extractOpenRouterUsage } from '@/lib/token-usage'
 import type { Tag, EventThread } from '@/types'
 
 // ─── Clients ──────────────────────────────────────────────────────────────────
@@ -44,7 +45,15 @@ export interface ThreadMatch {
 
 // ─── Internal: OpenRouter chat completion ─────────────────────────────────────
 
-async function openRouterChat(prompt: string): Promise<string> {
+interface OpenRouterResult {
+  text: string
+  model: string
+  promptTokens: number
+  completionTokens: number
+  modelIndex: number
+}
+
+async function openRouterChat(prompt: string): Promise<OpenRouterResult> {
   let lastError = ''
 
   for (let i = 0; i < OPENROUTER_MODELS.length; i++) {
@@ -83,8 +92,9 @@ async function openRouterChat(prompt: string): Promise<string> {
 
     const data = await res.json()
     const text: string = data?.choices?.[0]?.message?.content ?? ''
+    const usage = extractOpenRouterUsage({ ...data, _promptLength: Math.ceil(prompt.length / 4) })
     console.log(`[OpenRouter] Model ${modelNum} succeeded — response: ${text.slice(0, 300)}`)
-    return text
+    return { text, model, promptTokens: usage.promptTokens, completionTokens: usage.completionTokens, modelIndex: i }
   }
 
   throw new Error(`All OpenRouter models failed. Last error: ${lastError}`)
@@ -152,6 +162,7 @@ function keywordFallbackTags(
 export async function suggestTags(
   text: string,
   tags: Pick<Tag, 'id' | 'name' | 'type'>[],
+  spaceId?: string,
 ): Promise<TagSuggestion[]> {
   if (tags.length === 0) return []
 
@@ -172,7 +183,8 @@ Reply with ONLY a JSON array. Example:
 
 If no tags match, reply with: []`
 
-  const raw = await openRouterChat(prompt)
+  const result = await openRouterChat(prompt)
+  const raw = result.text
 
   // Strip markdown code fences if the model wrapped the JSON
   const cleaned = raw.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim()
@@ -246,6 +258,12 @@ If no tags match, reply with: []`
 
   console.log(`[OpenRouter] suggestTags — ${results.length} valid suggestions from model`)
 
+  // Record token usage (fire-and-forget)
+  recordTokenUsage({
+    spaceId, jobType: 'tag_suggestions', model: result.model,
+    promptTokens: result.promptTokens, completionTokens: result.completionTokens,
+  }).catch(() => {})
+
   // Model returned empty array — try keyword fallback
   if (results.length === 0) {
     console.log(`[suggestTags] Model returned [] — trying keyword fallback`)
@@ -261,6 +279,7 @@ If no tags match, reply with: []`
 export async function matchThread(
   text: string,
   threads: Pick<EventThread, 'id' | 'title' | 'description'>[],
+  spaceId?: string,
 ): Promise<ThreadMatch | null> {
   if (threads.length === 0) return null
 
@@ -286,7 +305,8 @@ Return ONLY one of these two formats and nothing else — no markdown, no explan
 or
 null`
 
-  const raw = await openRouterChat(prompt)
+  const result = await openRouterChat(prompt)
+  const raw = result.text
 
   // Strip markdown code fences if present
   const cleaned = raw.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim()
@@ -308,6 +328,13 @@ null`
   if (!threads.some((t) => t.id === match.thread_id)) return null
 
   console.log(`[OpenRouter] matchThread — matched thread_id=${match.thread_id} confidence=${match.confidence_score}`)
+
+  // Record token usage (fire-and-forget)
+  recordTokenUsage({
+    spaceId, jobType: 'thread_matching', model: result.model,
+    promptTokens: result.promptTokens, completionTokens: result.completionTokens,
+  }).catch(() => {})
+
   return match
 }
 
@@ -318,8 +345,16 @@ null`
 export async function generateAndStoreArticleVector(
   finalItemId: string,
   text: string,
+  spaceId?: string,
 ): Promise<void> {
   const embedding = await generateEmbedding(text)
+
+  // Record embedding token usage (fire-and-forget)
+  recordTokenUsage({
+    spaceId, jobType: 'embedding', model: 'embed-english-v3.0',
+    promptTokens: Math.ceil(text.slice(0, EMBED_MAX_CHARS).length / 4),
+    completionTokens: 0,
+  }).catch(() => {})
 
   // pgvector expects the vector as a formatted string: [val1,val2,...]
   const vectorString = `[${embedding.join(',')}]`

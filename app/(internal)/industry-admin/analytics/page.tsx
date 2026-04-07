@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { AlertCircle, CheckCircle, XCircle, TrendingUp, TrendingDown } from 'lucide-react'
+import { AlertCircle, CheckCircle, XCircle } from 'lucide-react'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
 import { useSession } from '@/lib/useSession'
 import { AI_TARGETS } from '@/lib/admin'
@@ -130,10 +130,24 @@ export default function AnalyticsPage() {
         supabase.from('raw_items').select('id, created_at, ai_processed').eq('space_id', spaceId).eq('ai_processed', true),
       ])
 
-      const finalItemIds = new Set((finalItems ?? []).map(f => f.id))
-      const spaceInteractions = (interactions ?? []).filter(i => finalItemIds.has(i.final_item_id))
-      const spaceRawIds = new Set((rawAllItems ?? []).map(r => r.id))
-      const spaceSuggestions = (suggestions ?? []).filter(s => spaceRawIds.has(s.raw_item_id))
+      type FinalItem = { id: string; title: string; published_at: string; severity: string }
+      type Interaction = { user_id: string; final_item_id: string; action: string; interacted_at: string; thread_id: string | null }
+      type RawItem = { id: string; submitted_by: string; status: string; created_at: string; ai_processed: boolean }
+      type SpaceUser = { id: string; name: string; role: string }
+      type Suggestion = { id: string; raw_item_id: string; suggestion_type: string; accepted: boolean | null; created_at: string }
+      type RawAllItem = { id: string; created_at: string; ai_processed: boolean }
+
+      const typedFinalItems = (finalItems ?? []) as FinalItem[]
+      const typedInteractions = (interactions ?? []) as Interaction[]
+      const typedRawItems = (rawItems ?? []) as RawItem[]
+      const typedSpaceUsers = (spaceUsers ?? []) as SpaceUser[]
+      const typedSuggestions = (suggestions ?? []) as Suggestion[]
+      const typedRawAllItems = (rawAllItems ?? []) as RawAllItem[]
+
+      const finalItemIds = new Set(typedFinalItems.map(f => f.id))
+      const spaceInteractions = typedInteractions.filter(i => finalItemIds.has(i.final_item_id))
+      const spaceRawIds = new Set(typedRawAllItems.map(r => r.id))
+      const spaceSuggestions = typedSuggestions.filter(s => spaceRawIds.has(s.raw_item_id))
 
       // ── User Engagement ──────────────────────────────────────────────────
       const reads = spaceInteractions.filter(i => i.action === 'read')
@@ -175,7 +189,7 @@ export default function AnalyticsPage() {
         if (i.action === 'read') readMap[i.final_item_id] = (readMap[i.final_item_id] ?? 0) + 1
         if (i.action === 'saved') savedMap[i.final_item_id] = (savedMap[i.final_item_id] ?? 0) + 1
       }
-      const fiMap = Object.fromEntries((finalItems ?? []).map(f => [f.id, f]))
+      const fiMap = Object.fromEntries(typedFinalItems.map(f => [f.id, f]))
       const topR = Object.entries(readMap)
         .sort(([, a], [, b]) => b - a).slice(0, 5)
         .map(([id, count]) => ({ id, title: fiMap[id]?.title ?? id, count, published_at: fiMap[id]?.published_at ?? '' }))
@@ -198,7 +212,7 @@ export default function AnalyticsPage() {
       setDupeAccuracy(dupeAccRate)
 
       // Avg processing time: diff between raw_item created_at and first suggestion created_at
-      const rawMap = Object.fromEntries((rawAllItems ?? []).map(r => [r.id, r]))
+      const rawMap = Object.fromEntries(typedRawAllItems.map(r => [r.id, r]))
       const timesByItem: Record<string, number[]> = {}
       for (const s of spaceSuggestions) {
         if (!timesByItem[s.raw_item_id]) timesByItem[s.raw_item_id] = []
@@ -230,13 +244,13 @@ export default function AnalyticsPage() {
 
       // ── Team Performance ─────────────────────────────────────────────────
       const rawByUser: Record<string, { submitted: number; published: number; rejected: number }> = {}
-      for (const r of (rawItems ?? [])) {
+      for (const r of typedRawItems) {
         if (!rawByUser[r.submitted_by]) rawByUser[r.submitted_by] = { submitted: 0, published: 0, rejected: 0 }
         rawByUser[r.submitted_by].submitted++
         if (r.status === 'processed') rawByUser[r.submitted_by].published++
         if (r.status === 'rejected') rawByUser[r.submitted_by].rejected++
       }
-      const contribs = (spaceUsers ?? []).filter(u => u.role === 'contributor')
+      const contribs = typedSpaceUsers.filter(u => u.role === 'contributor')
       setTeamData(contribs.map(u => {
         const stats = rawByUser[u.id] ?? { submitted: 0, published: 0, rejected: 0 }
         return {

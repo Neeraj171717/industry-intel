@@ -164,7 +164,7 @@ export default function SettingsPage() {
       ...settings,
       updated_at: new Date().toISOString(),
     }
-    const { data, error: e } = await createBrowserSupabaseClient()
+    const { error: e } = await createBrowserSupabaseClient()
       .from('space_settings')
       .upsert(payload, { onConflict: 'space_id' })
       .select()

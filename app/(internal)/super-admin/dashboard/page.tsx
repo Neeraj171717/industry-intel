@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { AlertTriangle, Users, FileText, CheckCircle, RefreshCw, X, ChevronRight } from 'lucide-react'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
 import { useSession } from '@/lib/useSession'
-import { getGreeting, timeAgo, formatDate } from '@/lib/admin'
+import { getGreeting, timeAgo } from '@/lib/admin'
 
 const GOLD = '#C9A84C'
 

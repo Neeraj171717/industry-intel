@@ -176,7 +176,7 @@ export default function SystemHealthPage() {
           if (!firstSugMap.has(sg.raw_item_id)) firstSugMap.set(sg.raw_item_id, sg.created_at)
         }
         const diffs: number[] = []
-        for (const [rid, fsAt] of firstSugMap) {
+        for (const [rid, fsAt] of Array.from(firstSugMap.entries())) {
           const rawAt = rawMap.get(rid)
           if (rawAt) {
             const diff = (new Date(fsAt).getTime() - new Date(rawAt).getTime()) / 1000

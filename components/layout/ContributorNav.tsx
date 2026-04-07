@@ -10,6 +10,7 @@ import { useAppStore } from '@/store'
 const NAV_LINKS = [
   { href: '/contributor/dashboard', label: 'Dashboard' },
   { href: '/contributor/submit', label: 'Submit' },
+  { href: '/contributor/bulk-import', label: 'Bulk Import' },
   { href: '/contributor/history', label: 'History' },
 ]
 

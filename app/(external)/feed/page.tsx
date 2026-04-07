@@ -76,14 +76,22 @@ interface CardProps {
   onExit: (dir: 'left' | 'right') => void
   onBookmark: () => void
   onTap: () => void
+  triggerSaveExit: boolean
 }
 
-function ArticleCard({ article, isTop, stackIndex, isSaved, onExit, onBookmark, onTap }: CardProps) {
+function ArticleCard({ article, isTop, stackIndex, isSaved, onExit, onBookmark, onTap, triggerSaveExit }: CardProps) {
   const x            = useMotionValue(0)
   const rotate       = useTransform(x, [-300, 0, 300], [-18, 0, 18])
   const greenOpacity = useTransform(x, [20, 110], [0, 1])
   const redOpacity   = useTransform(x, [-110, -20], [1, 0])
   const isDragging   = useRef(false)
+
+  // Programmatic exit animation triggered by bookmark
+  useEffect(() => {
+    if (!triggerSaveExit || !isTop) return
+    const W = typeof window !== 'undefined' ? window.innerWidth : 400
+    animate(x, W + 300, { duration: 0.28, ease: [0.25, 1, 0.5, 1], onComplete: () => onExit('right') })
+  }, [triggerSaveExit]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDragStart = useCallback(() => { isDragging.current = true }, [])
 
@@ -246,6 +254,7 @@ export default function FeedPage() {
   const [savedIds, setSavedIds]     = useState<Set<string>>(new Set())
   const [toast, setToast]           = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [savingCardId, setSavingCardId] = useState<string | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   function showToast(msg: string) {
@@ -296,6 +305,14 @@ export default function FeedPage() {
   const visibleCards = allCards.slice(0, 3)
 
   const handleExit = useCallback((article: FeedArticle, dir: 'left' | 'right') => {
+    // If this card was bookmark-exiting, just remove it — don't navigate
+    if (savingCardId === article.id) {
+      setSavingCardId(null)
+      setAllCards(prev => prev.filter(c => c.id !== article.id))
+      setTimeout(loadMore, 150)
+      return
+    }
+
     setAllCards(prev => prev.filter(c => c.id !== article.id))
 
     if (dir === 'right') {
@@ -309,7 +326,7 @@ export default function FeedPage() {
     }
 
     setTimeout(loadMore, 150)
-  }, [router, loadMore])
+  }, [router, loadMore, savingCardId])
 
   const handleTap = useCallback((article: FeedArticle) => {
     setAllCards(prev => prev.filter(c => c.id !== article.id))
@@ -317,24 +334,17 @@ export default function FeedPage() {
   }, [router])
 
   const handleBookmark = useCallback((article: FeedArticle) => {
-    const alreadySaved = savedIds.has(article.id)
-    if (alreadySaved) {
-      setSavedIds(prev => { const s = new Set(prev); s.delete(article.id); return s })
-      void fetch('/api/interactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ final_item_id: article.id, action: 'unsaved' }),
-      })
-    } else {
-      setSavedIds(prev => new Set(Array.from(prev).concat(article.id)))
-      showToast('Saved to Library')
-      void fetch('/api/interactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ final_item_id: article.id, action: 'saved' }),
-      })
-    }
-  }, [savedIds]) // eslint-disable-line react-hooks/exhaustive-deps
+    // Save to library and animate card away
+    setSavedIds(prev => new Set(Array.from(prev).concat(article.id)))
+    showToast('Saved to Library')
+    void fetch('/api/interactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ final_item_id: article.id, action: 'saved' }),
+    })
+    // Trigger the slide-out animation
+    setSavingCardId(article.id)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -449,6 +459,7 @@ export default function FeedPage() {
                     onExit={(dir) => handleExit(article, dir)}
                     onBookmark={() => handleBookmark(article)}
                     onTap={() => handleTap(article)}
+                    triggerSaveExit={savingCardId === article.id}
                   />
                 )
               })}

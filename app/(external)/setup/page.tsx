@@ -75,7 +75,7 @@ export default function SetupPage() {
       .select('id')
       .eq('user_id', user.id)
       .maybeSingle()
-      .then(({ data }) => {
+      .then(({ data }: { data: { id: string } | null }) => {
         if (data) router.replace('/feed')
       })
   }, [user, router])
@@ -91,7 +91,7 @@ export default function SetupPage() {
       .eq('type', 'topic')
       .eq('status', 'active')
       .order('name')
-      .then(({ data }) => {
+      .then(({ data }: { data: Array<{ id: string; name: string }> | null }) => {
         setTopicTags(data ?? [])
         setTagsLoading(false)
       })

@@ -107,7 +107,7 @@ async function runTagSuggestions(
 
   console.log(`[AI Brain] Job 2 — tags being sent to Gemini:`, tags.map((t) => `${t.name} (${t.type})`).join(', '))
 
-  const suggestions = await suggestTags(rawText, tags as Pick<Tag, 'id' | 'name' | 'type'>[])
+  const suggestions = await suggestTags(rawText, tags as Pick<Tag, 'id' | 'name' | 'type'>[], spaceId)
 
   if (suggestions.length === 0) {
     console.log(`[AI Brain] Job 2 — no tag suggestions returned`)
@@ -160,6 +160,7 @@ async function runThreadMatching(
   const match = await matchThread(
     rawText,
     threads as Pick<EventThread, 'id' | 'title' | 'description'>[],
+    spaceId,
   )
 
   if (!match) {

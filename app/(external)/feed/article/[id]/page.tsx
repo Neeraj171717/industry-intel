@@ -18,9 +18,9 @@ interface ArticleData {
   impact: string | null
   published_at: string
   thread_id: string | null
+  source_name: string | null
+  source_url: string | null
   thread: { id: string; title: string } | null
-  author: { name: string } | null
-  raw_item: { source: { name: string; url: string } | null } | null
   article_tags: { tag_id: string }[]
   related: { id: string; title: string; published_at: string }[]
 }
@@ -73,9 +73,8 @@ export default function ArticleViewPage() {
           .from('final_items')
           .select(`
             id, title, summary, body, content_type, severity, locality, impact, published_at, thread_id,
-            author:users!final_items_author_id_fkey(name),
+            source_name, source_url,
             thread:event_threads(id, title),
-            raw_item:raw_items(source:sources(name, url)),
             article_tags(tag_id)
           `)
           .eq('id', articleId)
@@ -217,8 +216,15 @@ export default function ArticleViewPage() {
   const badgeClass    = SEVERITY_BADGE[article.severity ?? 'low'] ?? SEVERITY_BADGE.low
   const borderClass   = SEVERITY_BORDER[article.severity ?? 'low'] ?? SEVERITY_BORDER.low
   const typeLabel     = article.content_type?.replace(/_/g, ' ').toUpperCase() ?? ''
-  const sourceName    = article.raw_item?.source?.name ?? 'Industry Intel Editorial'
-  const sourceUrl     = article.raw_item?.source?.url ?? null
+
+  // Derive display source: source_name → domain from source_url → fallback
+  let sourceName = 'Industry Intel'
+  if (article.source_name) {
+    sourceName = article.source_name
+  } else if (article.source_url) {
+    try { sourceName = new URL(article.source_url).hostname.replace(/^www\./, '') } catch { /* keep fallback */ }
+  }
+  const sourceUrl = article.source_url ?? null
 
   return (
     <div className="min-h-screen bg-[#0D1117] flex flex-col max-w-[430px] mx-auto">
@@ -291,7 +297,7 @@ export default function ArticleViewPage() {
         {/* Meta row */}
         <div className="flex items-center gap-2 px-4 mb-5">
           <span className="text-[12px] text-[#444D5A]">
-            {article.author?.name ?? 'Industry Intel Editorial'}
+            {sourceName}
           </span>
           <span className="text-[#2C3444]">·</span>
           <span className="text-[12px] text-[#444D5A]">{formatDate(article.published_at)}</span>

@@ -20,6 +20,34 @@ interface SpaceMetric {
   growthRate: number // positive = growth, negative = decline
 }
 
+interface TokenUsageRow {
+  job_type: string
+  model: string
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  estimated_cost_usd: number
+  created_at: string
+  space_id: string | null
+}
+
+interface TokenByJob {
+  jobType: string
+  totalTokens: number
+  count: number
+}
+
+interface TokenBySpace {
+  spaceName: string
+  totalTokens: number
+  estimatedCost: number
+}
+
+interface TokenOverTime {
+  label: string
+  tokens: number
+}
+
 interface AnalyticsData {
   totalUsers: number
   newSignups: number
@@ -35,6 +63,14 @@ interface AnalyticsData {
   avgResponseMs: number
   uptimePct: number
   errorRatePerHour: number
+  // Token usage
+  totalTokens: number
+  totalEstimatedCost: number
+  totalAiCalls: number
+  tokensByJob: TokenByJob[]
+  tokensBySpace: TokenBySpace[]
+  tokensOverTime: TokenOverTime[]
+  modelBreakdown: { model: string; totalTokens: number; calls: number }[]
 }
 
 // ─── Helper: date range bounds ─────────────────────────────────────────────────
@@ -143,6 +179,7 @@ export default function PlatformAnalyticsPage() {
         articlesRes,
         newArticlesRes,
         interactionsRes,
+        tokenUsageRes,
       ] = await Promise.all([
         supabase.from('users').select('id', { count: 'exact', head: true }),
         supabase.from('users').select('id, created_at').gte('created_at', startDate),
@@ -151,6 +188,7 @@ export default function PlatformAnalyticsPage() {
         supabase.from('final_items').select('id, space_id, content_type, published_at'),
         supabase.from('final_items').select('id, published_at').gte('published_at', startDate),
         supabase.from('user_interactions').select('action').gte('interacted_at', startDate),
+        supabase.from('token_usage').select('job_type, model, prompt_tokens, completion_tokens, total_tokens, estimated_cost_usd, created_at, space_id').gte('created_at', startDate),
       ])
 
       const totalUsers    = allUsersRes.count ?? 0
@@ -160,6 +198,7 @@ export default function PlatformAnalyticsPage() {
       const articles      = (articlesRes.data ?? []) as Array<{ id: string; space_id: string; content_type: string | null; published_at: string }>
       const newArticles   = (newArticlesRes.data ?? []) as Array<{ id: string; published_at: string }>
       const interactions  = (interactionsRes.data ?? []) as Array<{ action: string }>
+      const tokenUsage    = (tokenUsageRes.data ?? []) as TokenUsageRow[]
 
       // ── Signups over time (weekly buckets) ────────────────────────────
       const weeks = range === 'week' ? 7 : range === 'month' ? 4 : range === 'quarter' ? 12 : 52
@@ -231,6 +270,64 @@ export default function PlatformAnalyticsPage() {
       const platformSkipRate  = totalInteractions > 0 ? Math.round((skips  / totalInteractions) * 100) : 0
       const librarySaveRate   = totalInteractions > 0 ? Math.round((saves  / totalInteractions) * 100) : 0
 
+      // ── Token usage aggregation ────────────────────────────────────
+      const totalTokens = tokenUsage.reduce((sum, r) => sum + (r.total_tokens ?? 0), 0)
+      const totalEstimatedCost = tokenUsage.reduce((sum, r) => sum + Number(r.estimated_cost_usd ?? 0), 0)
+      const totalAiCalls = tokenUsage.length
+
+      // By job type
+      const jobMap = new Map<string, { totalTokens: number; count: number }>()
+      for (const r of tokenUsage) {
+        const existing = jobMap.get(r.job_type) ?? { totalTokens: 0, count: 0 }
+        existing.totalTokens += r.total_tokens ?? 0
+        existing.count += 1
+        jobMap.set(r.job_type, existing)
+      }
+      const tokensByJob: TokenByJob[] = Array.from(jobMap.entries())
+        .map(([jobType, v]) => ({ jobType, ...v }))
+        .sort((a, b) => b.totalTokens - a.totalTokens)
+
+      // By space
+      const spaceMap = new Map<string, { totalTokens: number; estimatedCost: number }>()
+      for (const r of tokenUsage) {
+        const spaceKey = r.space_id ?? 'unknown'
+        const existing = spaceMap.get(spaceKey) ?? { totalTokens: 0, estimatedCost: 0 }
+        existing.totalTokens += r.total_tokens ?? 0
+        existing.estimatedCost += Number(r.estimated_cost_usd ?? 0)
+        spaceMap.set(spaceKey, existing)
+      }
+      const spaceNameMap = new Map(spaces.map(s => [s.id, s.name]))
+      const tokensBySpace: TokenBySpace[] = Array.from(spaceMap.entries())
+        .map(([id, v]) => ({ spaceName: spaceNameMap.get(id) ?? 'Unknown', ...v }))
+        .sort((a, b) => b.totalTokens - a.totalTokens)
+
+      // Over time (daily buckets, last 14 days)
+      const tokensOverTime: TokenOverTime[] = []
+      for (let i = 13; i >= 0; i--) {
+        const dayEnd   = new Date(Date.now() - i * 86400000)
+        const dayStart = new Date(dayEnd.getTime() - 86400000)
+        const dayTokens = tokenUsage.filter(r => {
+          const d = new Date(r.created_at)
+          return d >= dayStart && d < dayEnd
+        }).reduce((sum, r) => sum + (r.total_tokens ?? 0), 0)
+        tokensOverTime.push({
+          label: dayEnd.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+          tokens: dayTokens,
+        })
+      }
+
+      // By model
+      const modelMap = new Map<string, { totalTokens: number; calls: number }>()
+      for (const r of tokenUsage) {
+        const existing = modelMap.get(r.model) ?? { totalTokens: 0, calls: 0 }
+        existing.totalTokens += r.total_tokens ?? 0
+        existing.calls += 1
+        modelMap.set(r.model, existing)
+      }
+      const modelBreakdown = Array.from(modelMap.entries())
+        .map(([model, v]) => ({ model, ...v }))
+        .sort((a, b) => b.totalTokens - a.totalTokens)
+
       setData({
         totalUsers,
         newSignups: newUsers.length,
@@ -246,6 +343,13 @@ export default function PlatformAnalyticsPage() {
         avgResponseMs: 0, // placeholder — no server timing in client
         uptimePct: 99.9,  // placeholder
         errorRatePerHour: 0,
+        totalTokens,
+        totalEstimatedCost,
+        totalAiCalls,
+        tokensByJob,
+        tokensBySpace,
+        tokensOverTime,
+        modelBreakdown,
       })
     } catch (err) {
       console.error('[Analytics] load error:', err)
@@ -473,7 +577,127 @@ export default function PlatformAnalyticsPage() {
             </div>
           </Section>
 
-          {/* Section 5 — Technical Performance */}
+          {/* Section 5 — AI Token Usage & Cost */}
+          <Section
+            title="AI Token Usage & Cost"
+            onExport={() => exportCSV('token-usage.csv',
+              data.tokensByJob.map(j => [j.jobType, String(j.totalTokens), String(j.count)]),
+              ['Job Type', 'Total Tokens', 'Calls']
+            )}
+          >
+            {/* Summary cards */}
+            <div className="grid grid-cols-3 gap-6">
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-1">Total Tokens</p>
+                <p className="text-3xl font-bold text-slate-800">{data.totalTokens.toLocaleString()}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{data.totalAiCalls} AI calls</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-1">Estimated Cost</p>
+                <p className="text-3xl font-bold text-slate-800">${data.totalEstimatedCost.toFixed(4)}</p>
+                <p className="text-xs text-gray-400 mt-0.5">in selected period</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-1">Avg Tokens / Call</p>
+                <p className="text-3xl font-bold text-slate-800">
+                  {data.totalAiCalls > 0 ? Math.round(data.totalTokens / data.totalAiCalls).toLocaleString() : '—'}
+                </p>
+              </div>
+            </div>
+
+            {/* Tokens over time chart */}
+            <div>
+              <p className="text-xs text-gray-400 mb-3">Tokens consumed per day (last 14 days)</p>
+              <BarChart
+                values={data.tokensOverTime.map(d => d.tokens)}
+                labels={data.tokensOverTime.map(d => d.label)}
+                color="#0D9488"
+                height={130}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-8">
+              {/* Tokens by job type */}
+              <div>
+                <p className="text-xs text-gray-400 mb-3">By job type</p>
+                {data.tokensByJob.length === 0 ? (
+                  <p className="text-sm text-gray-400">No AI usage recorded yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {data.tokensByJob.map(j => {
+                      const pct = data.totalTokens > 0 ? Math.round((j.totalTokens / data.totalTokens) * 100) : 0
+                      return (
+                        <div key={j.jobType} className="flex items-center gap-3">
+                          <span className="text-xs text-gray-500 w-28 capitalize">{j.jobType.replace(/_/g, ' ')}</span>
+                          <div className="flex-1 bg-gray-100 h-2 rounded-full overflow-hidden">
+                            <div className="h-2 rounded-full bg-teal-500" style={{ width: `${pct}%` }} />
+                          </div>
+                          <span className="text-xs font-semibold text-slate-700 w-16 text-right">{j.totalTokens.toLocaleString()}</span>
+                          <span className="text-xs text-gray-400 w-12 text-right">{j.count} calls</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Tokens by space */}
+              <div>
+                <p className="text-xs text-gray-400 mb-3">By space</p>
+                {data.tokensBySpace.length === 0 ? (
+                  <p className="text-sm text-gray-400">No AI usage recorded yet.</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100">
+                        <th className="text-left py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Space</th>
+                        <th className="text-right py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Tokens</th>
+                        <th className="text-right py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {data.tokensBySpace.map(s => (
+                        <tr key={s.spaceName} className="hover:bg-gray-50">
+                          <td className="py-2 font-medium text-slate-900">{s.spaceName}</td>
+                          <td className="py-2 text-right text-slate-700">{s.totalTokens.toLocaleString()}</td>
+                          <td className="py-2 text-right text-slate-700">${s.estimatedCost.toFixed(4)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Model breakdown */}
+            {data.modelBreakdown.length > 0 && (
+              <div>
+                <p className="text-xs text-gray-400 mb-3">By model</p>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="text-left py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Model</th>
+                      <th className="text-right py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Tokens</th>
+                      <th className="text-right py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Calls</th>
+                      <th className="text-right py-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">Avg Tokens/Call</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {data.modelBreakdown.map(m => (
+                      <tr key={m.model} className="hover:bg-gray-50">
+                        <td className="py-2 font-medium text-slate-900 font-mono text-xs">{m.model}</td>
+                        <td className="py-2 text-right text-slate-700">{m.totalTokens.toLocaleString()}</td>
+                        <td className="py-2 text-right text-slate-700">{m.calls}</td>
+                        <td className="py-2 text-right text-slate-700">{m.calls > 0 ? Math.round(m.totalTokens / m.calls).toLocaleString() : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Section>
+
+          {/* Section 6 — Technical Performance */}
           <Section title="Technical Performance">
             <div className="grid grid-cols-3 gap-6">
               <div className="bg-gray-50 rounded-xl p-4 text-center">

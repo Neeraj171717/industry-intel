@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { FileText, Shield, Play, Sparkles, ChevronRight, PlusCircle, Clock, AlertCircle } from 'lucide-react'
+import { FileText, Shield, Play, Sparkles, ChevronRight, PlusCircle, Clock, AlertCircle, Upload } from 'lucide-react'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
 import { useSession } from '@/lib/useSession'
 import { ContributorNav } from '@/components/layout/ContributorNav'
@@ -196,13 +196,20 @@ export default function ContributorDashboardPage() {
         )}
 
         {/* Quick actions */}
-        <div className="grid grid-cols-2 gap-4 mb-8">
+        <div className="grid grid-cols-3 gap-3 mb-8">
           <Link
             href="/contributor/submit"
             className="flex items-center justify-center gap-2 bg-slate-900 text-white text-sm font-semibold py-3 rounded-xl hover:bg-slate-800 transition-colors"
           >
             <PlusCircle size={16} />
-            Submit New Content
+            Submit Content
+          </Link>
+          <Link
+            href="/contributor/bulk-import"
+            className="flex items-center justify-center gap-2 border-2 border-teal-600 text-teal-600 text-sm font-semibold py-3 rounded-xl hover:bg-teal-50 transition-colors"
+          >
+            <Upload size={16} />
+            Bulk Import CSV
           </Link>
           <Link
             href="/contributor/history"

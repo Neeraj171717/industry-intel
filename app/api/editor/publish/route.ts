@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
     // ── 8. Async vector generation (fire and forget) ────────────────────────
     const vectorText = `${payload.title} ${payload.summary} ${payload.body}`
     console.log(`[Publish] Triggering vector generation for final_item_id: ${finalItem.id}`)
-    generateAndStoreArticleVector(finalItem.id, vectorText)
+    generateAndStoreArticleVector(finalItem.id, vectorText, payload.space_id)
       .then(() => console.log(`[Publish] Vector generation completed for final_item_id: ${finalItem.id}`))
       .catch((err) => console.error('[Publish] Vector generation failed:', err))
 

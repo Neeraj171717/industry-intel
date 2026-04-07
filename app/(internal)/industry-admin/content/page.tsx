@@ -177,7 +177,7 @@ export default function ContentPage() {
       return
     }
 
-    const userIds = Array.from(new Set<string>(items.map((i: any) => i.author_id).filter(Boolean)))
+    const userIds = Array.from(new Set<string>(items.map((i: Record<string, string>) => i.author_id).filter(Boolean)))
     const flaggedIds = new Set<string>()
 
     const [{ data: users }, { data: flags }] = await Promise.all([
@@ -185,10 +185,10 @@ export default function ContentPage() {
       supabase.from('content_flags').select('final_item_id').eq('space_id', spaceId).eq('status', 'open'),
     ])
 
-    const userMap = Object.fromEntries((users ?? []).map((u: any) => [u.id, u.name]))
-    ;(flags ?? []).forEach((f: any) => flaggedIds.add(f.final_item_id))
+    const userMap = Object.fromEntries((users ?? []).map((u: { id: string; name: string }) => [u.id, u.name]))
+    ;(flags ?? []).forEach((f: { final_item_id: string }) => flaggedIds.add(f.final_item_id))
 
-    setArticles(items.map((i: any) => ({
+    setArticles(items.map((i: Record<string, string>) => ({
       id: i.id,
       headline: i.title,
       content_type: i.content_type,

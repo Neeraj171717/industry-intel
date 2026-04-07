@@ -87,6 +87,8 @@ export const STATUS_CONFIG: Record<string, { label: string; bg: string; text: st
 export interface RawItemWithContributor extends RawItem {
   contributor_name: string
   source_type?: string | null
+  source_name?: string | null
+  featured_image?: string | null
   opened_by: string | null
   opened_at: string | null
 }

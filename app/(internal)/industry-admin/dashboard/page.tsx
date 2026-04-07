@@ -213,7 +213,7 @@ export default function IndustryAdminDashboardPage() {
           }
         }
         const secsDiffs: number[] = []
-        for (const [rawId, firstSugAt] of firstSuggestionMap.entries()) {
+        for (const [rawId, firstSugAt] of Array.from(firstSuggestionMap.entries())) {
           const rawAt = rawItemsMap.get(rawId)
           if (rawAt) {
             const diff = (new Date(firstSugAt).getTime() - new Date(rawAt).getTime()) / 1000

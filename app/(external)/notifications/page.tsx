@@ -71,11 +71,12 @@ export default function NotificationsPage() {
           .not('thread_id', 'is', null),
       ])
 
+      const interactionRows = (interactionResult.data ?? []) as Array<{ thread_id: string | null; final_item_id: string }>
       const readThreadIds = new Set(
-        (interactionResult.data ?? []).map(r => r.thread_id).filter(Boolean) as string[]
+        interactionRows.map(r => r.thread_id).filter(Boolean) as string[]
       )
       const readArticleIds = new Set(
-        (interactionResult.data ?? []).map(r => r.final_item_id)
+        interactionRows.map(r => r.final_item_id)
       )
 
       const items: Notification[] = []
@@ -134,7 +135,7 @@ export default function NotificationsPage() {
   }, [sessionLoading, user, loadNotifications])
 
   const handleTap = useCallback((n: Notification) => {
-    setReadIds(prev => new Set([...prev, n.id]))
+    setReadIds(prev => new Set([...Array.from(prev), n.id]))
     if (n.article_id) {
       router.push(`/feed/article/${n.article_id}`)
     }

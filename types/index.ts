@@ -90,6 +90,8 @@ export interface RawItem {
   source_url: string | null
   raw_text: string
   notes: string | null
+  title: string | null
+  description: string | null
   status: RawItemStatus
   ai_processed: boolean
   created_at: string

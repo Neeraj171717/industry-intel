@@ -45,7 +45,7 @@ export default function ProfilePage() {
       .select('action')
       .eq('user_id', user.id)
       .in('action', ['read', 'saved'])
-      .then(({ data }) => {
+      .then(({ data }: { data: Array<{ action: string }> | null }) => {
         const read  = (data ?? []).filter(r => r.action === 'read').length
         const saved = (data ?? []).filter(r => r.action === 'saved').length
         setStats(prev => ({ ...prev, read, saved }))
@@ -57,7 +57,7 @@ export default function ProfilePage() {
       .select('followed_tag_ids')
       .eq('user_id', user.id)
       .maybeSingle()
-      .then(({ data }) => {
+      .then(({ data }: { data: { followed_tag_ids: string[] } | null }) => {
         const topics = (data?.followed_tag_ids ?? []).length
         setStats(prev => ({ ...prev, topics }))
       })
@@ -69,7 +69,7 @@ export default function ProfilePage() {
         .select('name')
         .eq('id', user.space_id)
         .single()
-        .then(({ data }) => setSpaceName(data?.name ?? null))
+        .then(({ data }: { data: { name: string } | null }) => setSpaceName(data?.name ?? null))
     }
   }, [user])
 

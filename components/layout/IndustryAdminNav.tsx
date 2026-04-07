@@ -36,7 +36,7 @@ export function IndustryAdminNav() {
       .select('name')
       .eq('id', currentUser.space_id)
       .single()
-      .then(({ data }) => { if (data) setSpaceName(data.name) })
+      .then(({ data }: { data: { name: string } | null }) => { if (data) setSpaceName(data.name) })
   }, [currentUser?.space_id])
 
   async function handleLogout() {

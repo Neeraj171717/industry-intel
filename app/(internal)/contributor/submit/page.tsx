@@ -76,6 +76,8 @@ export default function ContributorSubmitPage() {
   const [content, setContent] = useState('')
   const [notes, setNotes] = useState('')
   const [featuredImage, setFeaturedImage] = useState<string | null>(null)
+  const [metaTitle, setMetaTitle] = useState<string | null>(null)
+  const [metaDescription, setMetaDescription] = useState<string | null>(null)
 
   // UI state
   const [urlTouched, setUrlTouched] = useState(false)
@@ -138,6 +140,12 @@ export default function ContributorSubmitPage() {
       }
       if (data.image) {
         setFeaturedImage(data.image)
+      }
+      if (data.title) {
+        setMetaTitle(data.title)
+      }
+      if (data.description) {
+        setMetaDescription(data.description)
       }
       if (data.editorNotes && !notes.trim()) {
         setNotes(data.editorNotes)
@@ -240,6 +248,8 @@ export default function ContributorSubmitPage() {
         source_url: sourceUrl.trim(),
         source_name: sourceName.trim() || null,
         featured_image: featuredImage,
+        title: metaTitle,
+        description: metaDescription,
         raw_text: content.trim(),
         notes: notes.trim() || null,
         status: 'pending',
@@ -261,6 +271,8 @@ export default function ContributorSubmitPage() {
     setSourceUrl('')
     setSourceName('')
     setContent('')
+    setMetaTitle(null)
+    setMetaDescription(null)
     setNotes('')
     setFeaturedImage(null)
     setUrlTouched(false)
