@@ -135,7 +135,7 @@ function ArticleCard({ article, isTop, stackIndex, isSaved, onExit, onBookmark, 
         borderLeft: `4px solid ${borderColor}`,
       }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      className={`bg-[#161B22] rounded-2xl overflow-hidden select-none ${isTop ? 'cursor-grab active:cursor-grabbing shadow-[0_8px_32px_rgba(0,0,0,0.5)]' : ''}`}
+      className={`bg-[#161B22] rounded-2xl overflow-hidden select-none shadow-lg border border-gray-700 ${isTop ? 'cursor-grab active:cursor-grabbing shadow-[0_8px_32px_rgba(0,0,0,0.5)]' : ''}`}
       onClick={handleClick}
     >
       {/* ── Swipe indicators ──────────────────────────────────────────────── */}
