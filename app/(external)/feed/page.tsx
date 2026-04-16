@@ -10,7 +10,6 @@ import { EndUserNav } from '@/components/layout/EndUserNav'
 import { DesktopSidebar } from '@/components/feed/DesktopSidebar'
 import { PersonalizePanel } from '@/components/feed/PersonalizePanel'
 import { MobileSwipeOverlay } from '@/components/feed/MobileSwipeOverlay'
-import { IndustryPickerModal } from '@/components/feed/IndustryPickerModal'
 import { SignUpPromptModal } from '@/components/feed/SignUpPromptModal'
 import {
   addAnonIgnored,
@@ -291,7 +290,6 @@ export default function FeedPage() {
   const [savedIds, setSavedIds]     = useState<Set<string>>(new Set())
   const [likedIds, setLikedIds]     = useState<Set<string>>(new Set())
   const [toast, setToast]           = useState<string | null>(null)
-  const [pickerOpen, setPickerOpen] = useState(false)
   const [signUpPromptOpen, setSignUpPromptOpen] = useState(false)
   const [signUpReason, setSignUpReason] = useState<'save' | 'library' | 'notifications'>('save')
   const [signUpPromptArticle, setSignUpPromptArticle] = useState<string | undefined>(undefined)
@@ -499,7 +497,7 @@ export default function FeedPage() {
         <button
           onClick={() => {
             if (isAnon) { openSignupLocked('library'); return }
-            setPickerOpen(true)
+            router.push('/preferences')
           }}
           aria-label="Personalize"
           className="p-1.5 -mr-1.5 text-[#888888]"
@@ -640,15 +638,6 @@ export default function FeedPage() {
           {toast}
         </div>
       )}
-
-      {/* Anonymous + personalize modals */}
-      {/* Picker only reachable by logged-in users (anon slider → signup prompt) */}
-      <IndustryPickerModal
-        open={pickerOpen}
-        onSelect={(sid) => { handleDesktopIndustryPick(sid); setPickerOpen(false) }}
-        onClose={() => setPickerOpen(false)}
-        closable
-      />
 
       <SignUpPromptModal
         open={signUpPromptOpen}
