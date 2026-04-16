@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useSession } from '@/lib/useSession'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
 import { EndUserNav } from '@/components/layout/EndUserNav'
+import { DesktopSidebar } from '@/components/feed/DesktopSidebar'
 
 interface LibraryItem {
   id: string
@@ -140,17 +141,19 @@ export default function LibraryPage() {
 
   if (sessionLoading || loading) {
     return (
-      <div className="min-h-screen bg-[#0D1117] flex flex-col max-w-[430px] mx-auto">
-        <header className="px-4 h-14 flex items-center border-b border-[#1A2030]">
-          <div className="h-6 w-20 bg-[#161B22] rounded animate-pulse" />
-        </header>
-        <div className="p-4 space-y-3">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="bg-[#161B22] rounded-xl p-4 border-l-4 border-[#1E2530] animate-pulse">
-              <div className="h-4 bg-[#1E2530] rounded w-3/4 mb-2" />
-              <div className="h-3 bg-[#1E2530] rounded w-1/2" />
+      <div className="min-h-screen bg-[#0D1117]">
+        <div className="md:flex md:items-start md:max-w-[1400px] md:mx-auto">
+          <DesktopSidebar isAnon={false} />
+          <main className="flex-1 min-w-0">
+            <div className="px-4 md:px-8 pt-4 md:pt-8 space-y-3">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="bg-[#161B22] rounded-xl p-4 border-l-4 border-[#1E2530] animate-pulse">
+                  <div className="h-4 bg-[#1E2530] rounded w-3/4 mb-2" />
+                  <div className="h-3 bg-[#1E2530] rounded w-1/2" />
+                </div>
+              ))}
             </div>
-          ))}
+          </main>
         </div>
         <EndUserNav />
       </div>
@@ -158,110 +161,115 @@ export default function LibraryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0D1117] flex flex-col max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-[#0D1117]">
+      <div className="md:flex md:items-start md:max-w-[1400px] md:mx-auto">
+        <DesktopSidebar isAnon={false} />
 
-      {/* Header */}
-      <header className="flex items-center justify-between px-4 h-14 bg-[#0D1117] border-b border-[#1A2030] sticky top-0 z-40">
-        <div>
-          <h1 className="text-white font-bold text-[18px]">Library</h1>
-          {items.length > 0 && (
-            <p className="text-[11px] text-[#444D5A] -mt-0.5">
-              {items.length} saved {items.length === 1 ? 'article' : 'articles'}
-            </p>
-          )}
-        </div>
-      </header>
+        <main className="flex-1 min-w-0">
+          {/* Desktop header */}
+          <div className="hidden md:flex items-center h-16 px-8 border-b border-[#1A2030] sticky top-0 bg-[#0D1117]/95 backdrop-blur z-30 gap-3">
+            <h1 className="text-white font-bold text-[20px]">Library</h1>
+            {items.length > 0 && (
+              <span className="text-[13px] text-[#444D5A]">
+                {items.length} saved {items.length === 1 ? 'article' : 'articles'}
+              </span>
+            )}
+          </div>
 
-      {/* Content */}
-      <div className="flex-1 pb-[72px]">
-
-        {/* Empty state */}
-        {items.length === 0 && (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] px-8 text-center">
-            <div className="w-16 h-16 bg-[#161B22] rounded-2xl flex items-center justify-center mb-5 border border-[#1E2530]">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#444D5A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-              </svg>
+          {/* Mobile header */}
+          <header className="md:hidden flex items-center justify-between px-4 h-14 bg-[#0D1117] border-b border-[#1A2030] sticky top-0 z-40">
+            <div>
+              <h1 className="text-white font-bold text-[18px]">Library</h1>
+              {items.length > 0 && (
+                <p className="text-[11px] text-[#444D5A] -mt-0.5">
+                  {items.length} saved {items.length === 1 ? 'article' : 'articles'}
+                </p>
+              )}
             </div>
-            <h2 className="text-white font-bold text-[20px] mb-2">Nothing saved yet</h2>
-            <p className="text-[#444D5A] text-[14px] leading-relaxed mb-6">
-              Bookmark articles from your feed to read them here later.
-            </p>
-            <button
-              onClick={() => router.push('/feed')}
-              className="bg-[#00C2A8] text-white font-semibold px-6 py-3 rounded-xl text-[15px]"
-            >
-              Back to Feed
-            </button>
-          </div>
-        )}
+          </header>
 
-        {/* Library list */}
-        {items.length > 0 && (
-          <div className="px-4 pt-3 space-y-2.5">
-            {items.map(item => {
-              const dotClass    = SEVERITY_DOT[item.severity ?? 'low'] ?? SEVERITY_DOT.low
-              const borderClass = SEVERITY_BORDER[item.severity ?? 'low'] ?? SEVERITY_BORDER.low
-              return (
+          <div className="pb-[72px] md:pb-10 max-w-[860px] md:mx-auto">
+
+            {/* Empty state */}
+            {items.length === 0 && (
+              <div className="flex flex-col items-center justify-center min-h-[60vh] px-8 text-center">
+                <div className="w-16 h-16 bg-[#161B22] rounded-2xl flex items-center justify-center mb-5 border border-[#1E2530]">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#444D5A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                  </svg>
+                </div>
+                <h2 className="text-white font-bold text-[20px] mb-2">Nothing saved yet</h2>
+                <p className="text-[#444D5A] text-[14px] leading-relaxed mb-6">
+                  Bookmark articles from your feed to read them here later.
+                </p>
                 <button
-                  key={item.id}
-                  onClick={() => handleRead(item)}
-                  className={`w-full text-left bg-[#161B22] rounded-xl overflow-hidden border-l-4 ${borderClass} border border-[#1E2530] hover:border-[#2C3444] transition-colors`}
+                  onClick={() => router.push('/feed')}
+                  className="bg-[#00C2A8] text-white font-semibold px-6 py-3 rounded-xl text-[15px]"
                 >
-                  {/* Featured image */}
-                  {item.featured_image && (
-                    <div className="w-full h-[100px] overflow-hidden">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={item.featured_image}
-                        alt=""
-                        className="w-full h-full object-cover"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                      />
-                    </div>
-                  )}
-
-                  <div className="flex items-start gap-3 p-4">
-                    {/* Severity dot */}
-                    <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${dotClass}`} />
-
-                    <div className="flex-1 min-w-0">
-                      {/* Headline */}
-                      <p className="text-[15px] font-semibold text-white leading-snug line-clamp-2 mb-1">
-                        {item.title}
-                      </p>
-
-                      {/* Meta */}
-                      <div className="flex items-center gap-2 text-[12px] text-[#444D5A]">
-                        <span>{extractSourceName(item.source_name, item.source_url)}</span>
-                        <span>·</span>
-                        <span>Saved {timeAgo(item.interacted_at)}</span>
-                      </div>
-                    </div>
-
-                    {/* Unsave button */}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); void handleUnsave(item) }}
-                      className="p-1 shrink-0 touch-manipulation"
-                      aria-label="Remove from library"
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="#00C2A8" stroke="#00C2A8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                      </svg>
-                    </button>
-                  </div>
+                  Back to Feed
                 </button>
-              )
-            })}
+              </div>
+            )}
+
+            {/* Library list */}
+            {items.length > 0 && (
+              <div className="px-4 md:px-8 pt-3 md:pt-6 space-y-2.5">
+                {items.map(item => {
+                  const dotClass    = SEVERITY_DOT[item.severity ?? 'low'] ?? SEVERITY_DOT.low
+                  const borderClass = SEVERITY_BORDER[item.severity ?? 'low'] ?? SEVERITY_BORDER.low
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleRead(item)}
+                      className={`w-full text-left bg-[#161B22] rounded-xl overflow-hidden border-l-4 ${borderClass} border border-[#1E2530] hover:border-[#2C3444] transition-colors`}
+                    >
+                      {item.featured_image && (
+                        <div className="w-full h-[100px] md:h-[140px] overflow-hidden">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={item.featured_image}
+                            alt=""
+                            className="w-full h-full object-cover"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                          />
+                        </div>
+                      )}
+
+                      <div className="flex items-start gap-3 p-4">
+                        <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${dotClass}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[15px] md:text-[16px] font-semibold text-white leading-snug line-clamp-2 mb-1">
+                            {item.title}
+                          </p>
+                          <div className="flex items-center gap-2 text-[12px] text-[#444D5A]">
+                            <span>{extractSourceName(item.source_name, item.source_url)}</span>
+                            <span>·</span>
+                            <span>Saved {timeAgo(item.interacted_at)}</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); void handleUnsave(item) }}
+                          className="p-1 shrink-0 touch-manipulation"
+                          aria-label="Remove from library"
+                        >
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="#00C2A8" stroke="#00C2A8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                          </svg>
+                        </button>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
-        )}
+        </main>
       </div>
 
       <EndUserNav />
 
-      {/* Toast */}
       {toast && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-[#1E2530] text-white text-[13px] font-medium px-4 py-2.5 rounded-xl shadow-xl border border-[#2C3444]">
+        <div className="fixed bottom-24 md:bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#1E2530] text-white text-[13px] font-medium px-4 py-2.5 rounded-xl shadow-xl border border-[#2C3444]">
           {toast}
         </div>
       )}

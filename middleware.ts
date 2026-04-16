@@ -16,13 +16,15 @@ const PROTECTED_PREFIXES: Record<string, UserRole> = {
   '/industry-admin':'industry_admin',
   '/editor':        'editor',
   '/contributor':   'contributor',
-  '/feed':          'user',
   '/library':       'user',
   '/profile':       'user',
   '/preferences':   'user',
   '/setup':         'user',
   '/notifications': 'user',
 }
+
+// Paths anonymous visitors can access without login
+const ANON_ALLOWED_PREFIXES = ['/feed', '/auth']
 
 const PUBLIC_PATHS = ['/login', '/signup']
 
@@ -57,13 +59,21 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   const isPublicPath = PUBLIC_PATHS.some((p) => pathname.startsWith(p))
+  const isAnonAllowed = ANON_ALLOWED_PREFIXES.some((p) => pathname.startsWith(p))
 
-  // Unauthenticated user trying to access a protected route → /login
+  // Unauthenticated user:
+  //   • Public paths (/login, /signup) → allow
+  //   • Anonymous-allowed paths (/feed, /feed/article/...) → allow
+  //   • Root (/) → send to feed so they land on content instead of login
+  //   • Anything else protected → /login
   if (!authUser) {
-    if (!isPublicPath) {
-      return NextResponse.redirect(new URL('/login', request.url))
+    if (isPublicPath || isAnonAllowed) {
+      return response
     }
-    return response
+    if (pathname === '/') {
+      return NextResponse.redirect(new URL('/feed', request.url))
+    }
+    return NextResponse.redirect(new URL('/login', request.url))
   }
 
   // Authenticated user hitting a public path → redirect to their home
@@ -79,6 +89,24 @@ export async function middleware(request: NextRequest) {
       const home = ROLE_HOME[userRecord.role as UserRole]
       return NextResponse.redirect(new URL(home, request.url))
     }
+    return response
+  }
+
+  // Authenticated non-user roles (editor/admin/super_admin/contributor) visiting
+  // an anonymous-allowed path (like /feed) should be sent back to their role home.
+  // The /feed page is for consumers — staff should stay in their own consoles.
+  if (isAnonAllowed) {
+    const { data: userRecord } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', authUser.id)
+      .single()
+
+    if (userRecord?.role && userRecord.role !== 'user') {
+      const home = ROLE_HOME[userRecord.role as UserRole] ?? '/login'
+      return NextResponse.redirect(new URL(home, request.url))
+    }
+    // role === 'user' (or unknown) → allow through
     return response
   }
 

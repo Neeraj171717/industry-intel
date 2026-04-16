@@ -8,6 +8,7 @@ import { createBrowserSupabaseClient } from '@/lib/supabase'
 import { ROLE_HOME } from '@/lib/auth'
 import { useAppStore } from '@/store'
 import type { User, UserRole } from '@/types'
+import { clearAnonState, getAnonState } from '@/lib/anon'
 
 function LoginForm() {
   const router = useRouter()
@@ -76,6 +77,35 @@ function LoginForm() {
       }
 
       setCurrentUser(userRecord as User)
+
+      // If this user had been browsing anonymously in this browser, port their
+      // localStorage reads/ignores/tag affinity into the DB so the feed carries
+      // over seamlessly. Only meaningful for role=user.
+      if (userRecord.role === 'user') {
+        const anon = getAnonState()
+        const hasAnonData =
+          anon.readIds.length > 0 ||
+          anon.ignoredIds.length > 0 ||
+          Object.keys(anon.tagReads).length > 0
+        if (hasAnonData) {
+          try {
+            await fetch('/api/anon-migrate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                spaceId: anon.spaceId,
+                readIds: anon.readIds,
+                ignoredIds: anon.ignoredIds,
+                tagReads: anon.tagReads,
+              }),
+            })
+          } catch (err) {
+            console.warn('[login] anon migrate failed (non-fatal):', err)
+          }
+          clearAnonState()
+        }
+      }
+
       router.push(ROLE_HOME[userRecord.role as UserRole] ?? '/login')
     } catch {
       setError('Something went wrong. Please try again.')

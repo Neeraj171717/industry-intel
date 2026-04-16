@@ -1,11 +1,22 @@
 'use client'
 
-import { animate, motion, useMotionValue, useTransform, type PanInfo } from 'framer-motion'
+import { motion, PanInfo } from 'framer-motion'
 import Link from 'next/link'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from '@/lib/useSession'
+import { Heart, Bookmark, BookmarkCheck, SlidersHorizontal } from 'lucide-react'
 import { EndUserNav } from '@/components/layout/EndUserNav'
+import { DesktopSidebar } from '@/components/feed/DesktopSidebar'
+import { PersonalizePanel } from '@/components/feed/PersonalizePanel'
+import { MobileSwipeOverlay } from '@/components/feed/MobileSwipeOverlay'
+import { IndustryPickerModal } from '@/components/feed/IndustryPickerModal'
+import { SignUpPromptModal } from '@/components/feed/SignUpPromptModal'
+import {
+  addAnonIgnored,
+  addAnonSaveAttempt,
+  getSuppressedIds,
+} from '@/lib/anon'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -17,22 +28,12 @@ interface FeedArticle {
   content_type: string | null
   severity: string | null
   published_at: string
-  author_name: string | null
   source_name: string | null
   source_url: string | null
   thread_id: string | null
   thread_title: string | null
   is_thread_update: boolean
   score: number
-}
-
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const SEVERITY_BORDER: Record<string, string> = {
-  critical: '#E84C4C',
-  high:     '#E8A84C',
-  medium:   '#00C2A8',
-  low:      '#555555',
 }
 
 const SEVERITY_BADGE: Record<string, string> = {
@@ -46,11 +47,9 @@ function extractSourceName(sourceName: string | null | undefined, sourceUrl: str
   if (sourceName) return sourceName
   if (sourceUrl) {
     try {
-      const hostname = new URL(sourceUrl).hostname.replace(/^www\./, '')
-      return hostname.charAt(0).toUpperCase() + hostname.slice(1)
-    } catch {
-      // fall through
-    }
+      const h = new URL(sourceUrl).hostname.replace(/^www\./, '')
+      return h.charAt(0).toUpperCase() + h.slice(1)
+    } catch { /* fall through */ }
   }
   return 'Industry Intel'
 }
@@ -58,204 +57,249 @@ function extractSourceName(sourceName: string | null | undefined, sourceUrl: str
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
   const mins = Math.floor(diff / 60_000)
-  if (mins < 1)   return 'just now'
-  if (mins < 60)  return `${mins}m ago`
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
   const hrs = Math.floor(mins / 60)
-  if (hrs < 24)   return `${hrs}h ago`
-  const days = Math.floor(hrs / 24)
-  return `${days}d ago`
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
 }
 
-// ── Article Card ──────────────────────────────────────────────────────────────
+// ── Desktop card variants ────────────────────────────────────────────────────
 
-interface CardProps {
+interface DesktopCardProps {
   article: FeedArticle
-  isTop: boolean
-  stackIndex: number
   isSaved: boolean
-  onExit: (dir: 'left' | 'right') => void
+  isLiked: boolean
+  onLike: () => void
   onBookmark: () => void
   onTap: () => void
-  triggerSaveExit: boolean
+  variant: 'hero' | 'grid'
 }
 
-function ArticleCard({ article, isTop, stackIndex, isSaved, onExit, onBookmark, onTap, triggerSaveExit }: CardProps) {
-  const x            = useMotionValue(0)
-  const rotate       = useTransform(x, [-300, 0, 300], [-18, 0, 18])
-  const greenOpacity = useTransform(x, [20, 110], [0, 1])
-  const redOpacity   = useTransform(x, [-110, -20], [1, 0])
-  const isDragging   = useRef(false)
-
-  // Programmatic exit animation triggered by bookmark
-  useEffect(() => {
-    if (!triggerSaveExit || !isTop) return
-    const W = typeof window !== 'undefined' ? window.innerWidth : 400
-    animate(x, W + 300, { duration: 0.28, ease: [0.25, 1, 0.5, 1], onComplete: () => onExit('right') })
-  }, [triggerSaveExit]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleDragStart = useCallback(() => { isDragging.current = true }, [])
-
-  const handleDragEnd = useCallback((_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-    const W = typeof window !== 'undefined' ? window.innerWidth : 400
-    const THRESHOLD = W * 0.38
-
-    if (info.offset.x > THRESHOLD) {
-      animate(x, W + 300, { duration: 0.22, ease: [0.25, 1, 0.5, 1], onComplete: () => onExit('right') })
-    } else if (info.offset.x < -THRESHOLD) {
-      animate(x, -(W + 300), { duration: 0.22, ease: [0.25, 1, 0.5, 1], onComplete: () => onExit('left') })
-    } else {
-      animate(x, 0, { type: 'spring', stiffness: 400, damping: 30 })
-      setTimeout(() => { isDragging.current = false }, 80)
-    }
-  }, [x, onExit])
-
-  const handleClick = useCallback(() => {
-    if (!isDragging.current) onTap()
-  }, [onTap])
-
-  const borderColor = SEVERITY_BORDER[article.severity ?? 'low'] ?? '#555555'
-  const badgeClass  = SEVERITY_BADGE[article.severity ?? 'low'] ?? SEVERITY_BADGE.low
-  const typeLabel   = article.content_type?.replace(/_/g, ' ').toUpperCase() ?? ''
+function DesktopCard({ article, isSaved, isLiked, onLike, onBookmark, onTap, variant }: DesktopCardProps) {
+  const badgeClass = SEVERITY_BADGE[article.severity ?? 'low'] ?? SEVERITY_BADGE.low
+  const isHero = variant === 'hero'
 
   return (
-    <motion.div
-      drag={isTop ? 'x' : false}
-      dragConstraints={{ left: -9999, right: 9999 }}
-      dragMomentum={false}
-      dragElastic={0}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      animate={{ scale: 1 - stackIndex * 0.032, y: stackIndex * 16 }}
-      style={{
-        x: isTop ? x : 0,
-        rotate: isTop ? rotate : 0,
-        position: 'absolute',
-        left: 0, right: 0, top: 0,
-        zIndex: 30 - stackIndex,
-        borderLeft: `4px solid ${borderColor}`,
-      }}
-      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      className={`bg-[#161B22] rounded-2xl overflow-hidden select-none shadow-lg border border-gray-700 ${isTop ? 'cursor-grab active:cursor-grabbing shadow-[0_8px_32px_rgba(0,0,0,0.5)]' : ''}`}
-      onClick={handleClick}
+    <article
+      onClick={onTap}
+      className={`relative bg-[#161B22] rounded-2xl overflow-hidden border border-[#1E2530] hover:border-[#2C3444] cursor-pointer transition-colors group ${
+        isHero ? '' : 'h-full flex flex-col'
+      }`}
     >
-      {/* ── Swipe indicators ──────────────────────────────────────────────── */}
-      {isTop && (
-        <>
-          <motion.div
-            style={{ opacity: greenOpacity }}
-            className="absolute inset-0 z-20 flex items-center justify-start pl-5 pointer-events-none rounded-2xl bg-[#00C2A8]/10"
-          >
-            <div className="bg-[#00C2A8] rounded-full p-2.5">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            </div>
-          </motion.div>
-          <motion.div
-            style={{ opacity: redOpacity }}
-            className="absolute inset-0 z-20 flex items-center justify-end pr-5 pointer-events-none rounded-2xl bg-[#E84C4C]/10"
-          >
-            <div className="bg-[#E84C4C] rounded-full p-2.5">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </div>
-          </motion.div>
-        </>
-      )}
+      {/* Card actions (top-right) */}
+      <div className="absolute top-3 right-3 z-10 flex gap-1.5">
+        <ActionButton onClick={onLike} active={isLiked} activeColor="#E84C4C" label={isLiked ? 'Unlike' : 'Like'}>
+          <Heart size={14} fill={isLiked ? '#E84C4C' : 'none'} />
+        </ActionButton>
+        <ActionButton onClick={onBookmark} active={isSaved} activeColor="#00C2A8" label={isSaved ? 'Remove bookmark' : 'Save'}>
+          {isSaved ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
+        </ActionButton>
+      </div>
 
-      {/* ── Featured image ─────────────────────────────────────────────── */}
       {article.featured_image && (
-        <div className="w-full h-[180px] overflow-hidden">
+        <div className={`w-full overflow-hidden ${isHero ? 'h-[280px]' : 'h-[140px]'}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={article.featured_image}
             alt=""
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
           />
         </div>
       )}
 
-      {/* ── Card content ──────────────────────────────────────────────────── */}
-      <div className="p-4">
-        {/* Badges */}
-        <div className="flex items-center justify-between mb-3">
-          <span className={`text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded-full ${badgeClass}`}>
+      <div className={`${isHero ? 'p-5' : 'p-4 flex-1 flex flex-col'}`}>
+        <div className="flex items-center gap-2 mb-2">
+          <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${badgeClass}`}>
             {article.severity ?? 'low'}
           </span>
-          {typeLabel && (
-            <span className="text-[10px] font-medium uppercase tracking-wide px-2.5 py-1 rounded-full bg-[#252B36] text-[#666666]">
-              {typeLabel}
+          {article.content_type && (
+            <span className="text-[10px] font-medium uppercase tracking-wide px-2 py-0.5 rounded-full bg-[#1E2530] text-[#666]">
+              {article.content_type.replace(/_/g, ' ')}
             </span>
           )}
         </div>
 
-        {/* Thread update banner */}
-        {article.is_thread_update && article.thread_title && (
-          <div className="flex items-center gap-2 bg-[#00C2A8]/10 border border-[#00C2A8]/20 rounded-xl px-3 py-2 mb-3">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="#00C2A8">
-              <polygon points="5 3 19 12 5 21 5 3" />
-            </svg>
-            <span className="text-[12px] text-[#00C2A8] font-medium leading-tight">
-              New update to a story you followed
-            </span>
-          </div>
-        )}
-
-        {/* Headline */}
-        <h2 className="text-[18px] font-bold text-white leading-snug mb-2 line-clamp-2">
+        <h2 className={`font-bold text-white leading-snug mb-2 ${isHero ? 'text-[22px] line-clamp-2' : 'text-[15px] line-clamp-2'}`}>
           {article.headline}
         </h2>
 
-        {/* Summary */}
         {article.summary && (
-          <p className="text-[13px] leading-snug line-clamp-3 mb-2" style={{ color: '#AAAAAA' }}>
+          <p className={`text-[#AAAAAA] leading-snug ${isHero ? 'text-[14px] line-clamp-3' : 'text-[12px] line-clamp-2'}`}>
             {article.summary}
           </p>
         )}
 
-        {/* Footer row */}
-        <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#1E2530]">
-          <span className="text-[12px] text-[#444D5A]">
+        <div className={`flex items-center justify-between mt-auto pt-3 border-t border-[#1E2530] ${isHero ? 'mt-4' : 'mt-3'}`}>
+          <span className="text-[11px] text-[#444D5A] truncate">
             {extractSourceName(article.source_name, article.source_url)} · {timeAgo(article.published_at)}
           </span>
-          <button
-            onClick={(e) => { e.stopPropagation(); onBookmark() }}
-            className="p-1 -mr-1 touch-manipulation"
-            aria-label={isSaved ? 'Remove bookmark' : 'Bookmark'}
-          >
-            {isSaved ? (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="#00C2A8" stroke="#00C2A8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-              </svg>
-            ) : (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-              </svg>
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function ActionButton({
+  onClick, active, activeColor, label, children,
+}: {
+  onClick: () => void
+  active: boolean
+  activeColor: string
+  label: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick() }}
+      aria-label={label}
+      className="w-8 h-8 rounded-full bg-[#0D1117]/80 backdrop-blur border border-[#1E2530] flex items-center justify-center hover:bg-[#161B22] transition-colors"
+      style={{ color: active ? activeColor : '#888888' }}
+    >
+      {children}
+    </button>
+  )
+}
+
+// ── Mobile swipe card ────────────────────────────────────────────────────────
+
+interface MobileSwipeCardProps {
+  article: FeedArticle
+  isSaved: boolean
+  isLiked: boolean
+  onLike: () => void
+  onTap: () => void
+  onSwipeLeft: () => void
+  onSwipeRight: () => void
+}
+
+function MobileSwipeCard({ article, isSaved, isLiked, onLike, onTap, onSwipeLeft, onSwipeRight }: MobileSwipeCardProps) {
+  const [exited, setExited] = useState<null | 'left' | 'right'>(null)
+  const badgeClass = SEVERITY_BADGE[article.severity ?? 'low'] ?? SEVERITY_BADGE.low
+  const cardRef = useRef<HTMLDivElement>(null)
+  const dragStart = useRef({ x: 0, y: 0 })
+
+  const handleDragStart = (_e: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    dragStart.current = { x: info.point.x, y: info.point.y }
+  }
+
+  const handleDragEnd = (_e: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    const threshold = 100
+    const dx = info.offset.x
+    const dy = info.offset.y
+    // Only treat as swipe if horizontal movement dominates
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > threshold) {
+      if (dx > 0) { setExited('right'); setTimeout(onSwipeRight, 180) }
+      else { setExited('left'); setTimeout(onSwipeLeft, 180) }
+    }
+  }
+
+  return (
+    <motion.div
+      ref={cardRef}
+      drag="x"
+      dragDirectionLock
+      dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={0.6}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      animate={
+        exited === 'left'  ? { x: -500, opacity: 0 } :
+        exited === 'right' ? { x:  500, opacity: 0 } :
+                             { x: 0, opacity: 1 }
+      }
+      transition={{ type: 'spring', stiffness: 400, damping: 40 }}
+      className="snap-start shrink-0 w-full min-h-[calc(100dvh-56px)] px-4 py-3 flex"
+    >
+      <div
+        onClick={onTap}
+        className="relative w-full bg-[#161B22] rounded-2xl border border-[#1E2530] overflow-hidden flex flex-col cursor-pointer"
+      >
+        {article.featured_image && (
+          <div className="w-full h-[200px] overflow-hidden shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={article.featured_image}
+              alt=""
+              draggable={false}
+              className="w-full h-full object-cover pointer-events-none"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+            />
+          </div>
+        )}
+
+        <div className="flex-1 p-4 flex flex-col">
+          <div className="flex items-center gap-2 mb-3">
+            <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${badgeClass}`}>
+              {article.severity ?? 'low'}
+            </span>
+            {article.content_type && (
+              <span className="text-[10px] font-medium uppercase tracking-wide px-2 py-0.5 rounded-full bg-[#1E2530] text-[#666]">
+                {article.content_type.replace(/_/g, ' ')}
+              </span>
             )}
-          </button>
+          </div>
+
+          <h2 className="font-bold text-white text-[20px] leading-snug mb-3">
+            {article.headline}
+          </h2>
+
+          {article.summary && (
+            <p className="text-[#AAAAAA] text-[14px] leading-relaxed line-clamp-6 flex-1">
+              {article.summary}
+            </p>
+          )}
+
+          <div className="flex items-center justify-between mt-4 pt-3 border-t border-[#1E2530]">
+            <span className="text-[12px] text-[#444D5A] truncate">
+              {extractSourceName(article.source_name, article.source_url)} · {timeAgo(article.published_at)}
+            </span>
+            <button
+              onClick={(e) => { e.stopPropagation(); onLike() }}
+              aria-label={isLiked ? 'Unlike' : 'Like'}
+              className="p-2 -mr-2"
+              style={{ color: isLiked ? '#E84C4C' : '#666' }}
+            >
+              <Heart size={22} fill={isLiked ? '#E84C4C' : 'none'} />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between mt-2 text-[11px] text-[#2C3444]">
+            <span className="flex items-center gap-1">← skip</span>
+            <span className="flex items-center gap-1">{isSaved ? 'saved' : 'save →'}</span>
+          </div>
         </div>
       </div>
     </motion.div>
   )
 }
 
-// ── Feed Page ─────────────────────────────────────────────────────────────────
+// ── Feed Page ────────────────────────────────────────────────────────────────
 
 export default function FeedPage() {
-  const { user, loading: sessionLoading } = useSession({ required: true })
+  const { user, loading: sessionLoading } = useSession({ required: false })
   const router = useRouter()
+
+  const isAnon = !sessionLoading && !user
 
   const [allCards, setAllCards]     = useState<FeedArticle[]>([])
   const [loading, setLoading]       = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore]       = useState(false)
   const [noPrefs, setNoPrefs]       = useState(false)
   const [savedIds, setSavedIds]     = useState<Set<string>>(new Set())
+  const [likedIds, setLikedIds]     = useState<Set<string>>(new Set())
   const [toast, setToast]           = useState<string | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
-  const [savingCardId, setSavingCardId] = useState<string | null>(null)
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [signUpPromptOpen, setSignUpPromptOpen] = useState(false)
+  const [signUpReason, setSignUpReason] = useState<'save' | 'library' | 'notifications'>('save')
+  const [signUpPromptArticle, setSignUpPromptArticle] = useState<string | undefined>(undefined)
+  const toastTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+  const mobileSentinelRef = useRef<HTMLDivElement | null>(null)
+
+  const currentSpaceId = user?.space_id ?? null
 
   function showToast(msg: string) {
     setToast(msg)
@@ -263,16 +307,24 @@ export default function FeedPage() {
     toastTimer.current = setTimeout(() => setToast(null), 2200)
   }
 
-  const fetchFeed = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true)
-    else setLoading(true)
+  const buildFeedUrl = useCallback((offset: number): string => {
+    if (user) return `/api/feed-algorithm?offset=${offset}`
+    // Anonymous users get a general feed — no tag filtering
+    const suppressed = getSuppressedIds().join(',')
+    const params = new URLSearchParams({ offset: String(offset) })
+    if (suppressed) params.set('suppressed', suppressed)
+    return `/api/feed-algorithm?${params.toString()}`
+  }, [user])
+
+  const fetchFeed = useCallback(async () => {
+    const url = buildFeedUrl(0)
+    setLoading(true)
     try {
-      const res = await fetch('/api/feed-algorithm?offset=0')
+      const res = await fetch(url)
       if (!res.ok) throw new Error('Feed failed')
       const data = await res.json()
       if (data.message?.includes('preferences') || data.message?.includes('Complete')) {
-        setNoPrefs(true)
-        setAllCards([])
+        setNoPrefs(true); setAllCards([])
       } else {
         setNoPrefs(false)
         setAllCards(data.items ?? [])
@@ -282,59 +334,68 @@ export default function FeedPage() {
       console.error('[FeedPage]', err)
     } finally {
       setLoading(false)
-      setRefreshing(false)
     }
-  }, [])
+  }, [buildFeedUrl])
 
   useEffect(() => {
-    if (!sessionLoading && user) fetchFeed()
+    if (sessionLoading) return
+    fetchFeed()
   }, [sessionLoading, user, fetchFeed])
 
-  // Load more when running low
   const loadMore = useCallback(async () => {
-    if (!hasMore || allCards.length > 4) return
+    if (!hasMore || loadingMore || loading) return
+    const url = buildFeedUrl(allCards.length)
+    setLoadingMore(true)
     try {
-      const res = await fetch(`/api/feed-algorithm?offset=${allCards.length}`)
+      const res = await fetch(url)
       if (!res.ok) return
       const data = await res.json()
       setAllCards(prev => [...prev, ...(data.items ?? [])])
       setHasMore(data.hasMore ?? false)
-    } catch { /* silent */ }
-  }, [hasMore, allCards.length])
-
-  const visibleCards = allCards.slice(0, 3)
-
-  const handleExit = useCallback((article: FeedArticle, dir: 'left' | 'right') => {
-    // If this card was bookmark-exiting, just remove it — don't navigate
-    if (savingCardId === article.id) {
-      setSavingCardId(null)
-      setAllCards(prev => prev.filter(c => c.id !== article.id))
-      setTimeout(loadMore, 150)
-      return
+    } finally {
+      setLoadingMore(false)
     }
+  }, [hasMore, loadingMore, loading, allCards.length, buildFeedUrl])
 
-    setAllCards(prev => prev.filter(c => c.id !== article.id))
-
-    if (dir === 'right') {
-      router.push(`/feed/article/${article.id}`)
-    } else {
-      void fetch('/api/interactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ final_item_id: article.id, action: 'ignored', thread_id: article.thread_id }),
-      })
-    }
-
-    setTimeout(loadMore, 150)
-  }, [router, loadMore, savingCardId])
+  useEffect(() => {
+    const el = sentinelRef.current ?? mobileSentinelRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries[0]?.isIntersecting) loadMore() },
+      { rootMargin: '400px' }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [loadMore, allCards.length])
 
   const handleTap = useCallback((article: FeedArticle) => {
-    setAllCards(prev => prev.filter(c => c.id !== article.id))
     router.push(`/feed/article/${article.id}`)
   }, [router])
 
+  const handleLike = useCallback((article: FeedArticle) => {
+    setLikedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(article.id)) next.delete(article.id)
+      else next.add(article.id)
+      return next
+    })
+    if (!isAnon) {
+      void fetch('/api/interactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ final_item_id: article.id, action: 'liked' }),
+      })
+    }
+  }, [isAnon])
+
   const handleBookmark = useCallback((article: FeedArticle) => {
-    // Save to library and animate card away
+    if (isAnon) {
+      addAnonSaveAttempt(article.id)
+      setSignUpReason('save')
+      setSignUpPromptArticle(article.headline)
+      setSignUpPromptOpen(true)
+      return
+    }
     setSavedIds(prev => new Set(Array.from(prev).concat(article.id)))
     showToast('Saved to Library')
     void fetch('/api/interactions', {
@@ -342,11 +403,54 @@ export default function FeedPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ final_item_id: article.id, action: 'saved' }),
     })
-    // Trigger the slide-out animation
-    setSavingCardId(article.id)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isAnon])
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  const handleSwipeLeft = useCallback((article: FeedArticle) => {
+    if (isAnon) {
+      addAnonIgnored(article.id)
+    } else {
+      void fetch('/api/interactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ final_item_id: article.id, action: 'ignored' }),
+      })
+    }
+    setAllCards(prev => prev.filter(a => a.id !== article.id))
+    showToast('Skipped')
+  }, [isAnon])
+
+  const handleSwipeRight = useCallback((article: FeedArticle) => {
+    handleBookmark(article)
+  }, [handleBookmark])
+
+  const handleDesktopIndustryPick = useCallback((spaceId: string) => {
+    if (!user) return
+    // Persist on users.space_id
+    void fetch('/api/user/space', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ space_id: spaceId }),
+    }).then(() => {
+      router.push('/setup')
+    }).catch(() => showToast('Could not update industry'))
+  }, [user, router])
+
+  const openSignupLocked = useCallback((reason: 'save' | 'library' | 'notifications' = 'library') => {
+    setSignUpReason(reason)
+    setSignUpPromptArticle(undefined)
+    setSignUpPromptOpen(true)
+  }, [])
+
+  // Group desktop cards into hero+grid repeating blocks
+  const desktopBlocks = useMemo(() => {
+    const blocks: { hero: FeedArticle; grid: FeedArticle[] }[] = []
+    for (let i = 0; i < allCards.length; i += 4) {
+      const hero = allCards[i]
+      const grid = allCards.slice(i + 1, i + 4)
+      if (hero) blocks.push({ hero, grid })
+    }
+    return blocks
+  }, [allCards])
 
   if (sessionLoading) {
     return (
@@ -357,148 +461,171 @@ export default function FeedPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0D1117] flex flex-col max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-[#0D1117] text-white">
 
-      {/* ── Header ──────────────────────────────────────────────────────── */}
-      <header className="flex items-center justify-between px-4 h-14 bg-[#0D1117] border-b border-[#1A2030] sticky top-0 z-40">
+      {/* ── Mobile top bar ─────────────────────────────────────────────── */}
+      <header className="md:hidden flex items-center justify-between px-4 h-14 bg-[#0D1117] border-b border-[#1A2030] sticky top-0 z-40">
         <span className="text-white font-bold text-[17px] tracking-tight">Industry Intel</span>
-        <Link href="/notifications" className="relative p-1.5 -mr-1.5">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#888888" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-          </svg>
-          <span className="absolute top-1 right-1 w-2 h-2 bg-[#E84C4C] rounded-full border border-[#0D1117]" />
-        </Link>
+        <button
+          onClick={() => {
+            if (isAnon) { openSignupLocked('library'); return }
+            setPickerOpen(true)
+          }}
+          aria-label="Personalize"
+          className="p-1.5 -mr-1.5 text-[#888888]"
+        >
+          <SlidersHorizontal size={22} />
+        </button>
       </header>
 
-      {/* ── Feed counter ────────────────────────────────────────────────── */}
-      <div className="h-8 flex items-center justify-center">
-        <span className="text-[12px] text-[#444D5A]">
-          {loading
-            ? 'Loading your feed…'
-            : allCards.length > 0
-              ? `${allCards.length} ${allCards.length === 1 ? 'story' : 'stories'} curated for you today`
-              : ''}
-        </span>
-      </div>
+      {/* ── 3-column layout (desktop) / stacked (mobile) ─────────────── */}
+      <div className="md:flex md:items-start md:max-w-[1400px] md:mx-auto">
+        <DesktopSidebar isAnon={isAnon} onLockedClick={() => openSignupLocked('library')} />
 
-      {/* ── Main content ────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col pb-[72px]">
-
-        {/* Loading skeleton */}
-        {loading && (
-          <div className="mx-4 mt-2 animate-pulse">
-            <div className="bg-[#161B22] rounded-2xl p-4 border-l-4 border-[#1E2530]">
-              <div className="flex justify-between mb-3">
-                <div className="h-5 w-14 bg-[#1E2530] rounded-full" />
-                <div className="h-5 w-20 bg-[#1E2530] rounded-full" />
-              </div>
-              <div className="h-5 bg-[#1E2530] rounded w-full mb-2" />
-              <div className="h-5 bg-[#1E2530] rounded w-4/5 mb-4" />
-              <div className="h-3 bg-[#1E2530] rounded w-1/3" />
-            </div>
+        {/* Main column */}
+        <main className="flex-1 min-w-0">
+          {/* Desktop centered app name banner */}
+          <div className="hidden md:flex items-center justify-center h-16 border-b border-[#1A2030] sticky top-0 bg-[#0D1117]/95 backdrop-blur z-30">
+            <span className="text-white font-bold text-[20px] tracking-tight">Industry Intel</span>
           </div>
-        )}
 
-        {/* No preferences */}
-        {!loading && noPrefs && (
-          <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
-            <div className="w-16 h-16 bg-[#161B22] rounded-2xl flex items-center justify-center mb-5 border border-[#1E2530]">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" strokeWidth="1.5">
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-              </svg>
+          {/* Loading */}
+          {loading && (
+            <div className="px-4 md:px-8 pt-4 md:pt-8 space-y-4">
+              {[0, 1, 2].map(i => (
+                <div key={i} className="bg-[#161B22] rounded-2xl h-40 border border-[#1E2530] animate-pulse" />
+              ))}
             </div>
-            <h2 className="text-white font-bold text-[20px] mb-2">Personalise your feed</h2>
-            <p className="text-[#444D5A] text-[14px] leading-relaxed mb-6">
-              Select the topics you care about so we can curate the most relevant stories for you.
-            </p>
-            <Link href="/setup" className="bg-[#00C2A8] text-white font-semibold px-6 py-3 rounded-xl text-[15px]">
-              Complete preferences
-            </Link>
-          </div>
-        )}
+          )}
 
-        {/* All caught up */}
-        {!loading && !noPrefs && allCards.length === 0 && (
-          <div className="flex-1 flex flex-col items-center justify-center px-8 text-center">
-            <div className="w-16 h-16 bg-[#161B22] rounded-2xl flex items-center justify-center mb-5 border border-[#1E2530]">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#00C2A8" strokeWidth="2">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
+          {/* No prefs */}
+          {!loading && noPrefs && (
+            <div className="flex flex-col items-center justify-center px-8 text-center pt-20">
+              <h2 className="text-white font-bold text-[20px] mb-2">Personalise your feed</h2>
+              <p className="text-[#444D5A] text-[14px] mb-6 max-w-sm">
+                Select the topics you care about so we can curate the most relevant stories.
+              </p>
+              <Link href="/setup" className="bg-[#00C2A8] text-white font-semibold px-6 py-3 rounded-xl text-[15px]">
+                Complete preferences
+              </Link>
             </div>
-            <h2 className="text-white font-bold text-[20px] mb-2">You are all caught up</h2>
-            <p className="text-[#444D5A] text-[14px] mb-6">Check back later for new stories</p>
-            <button
-              onClick={() => fetchFeed(true)}
-              disabled={refreshing}
-              className="flex items-center gap-2 border border-[#1E2530] text-[#666666] px-5 py-2.5 rounded-xl text-[14px] disabled:opacity-50"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className={refreshing ? 'animate-spin' : ''}>
-                <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-              </svg>
-              {refreshing ? 'Refreshing…' : 'Refresh feed'}
-            </button>
-          </div>
-        )}
+          )}
 
-        {/* ── Card stack ──────────────────────────────────────────────── */}
-        {!loading && allCards.length > 0 && (
-          <>
-            {/* Stack container — height accommodates card + peek of cards behind */}
-            <div className="relative mx-4 mt-1" style={{ height: 460 }}>
-              {visibleCards.slice().reverse().map((article, ri) => {
-                const stackIndex = visibleCards.length - 1 - ri
-                return (
-                  <ArticleCard
-                    key={article.id}
-                    article={article}
-                    isTop={stackIndex === 0}
-                    stackIndex={stackIndex}
-                    isSaved={savedIds.has(article.id)}
-                    onExit={(dir) => handleExit(article, dir)}
-                    onBookmark={() => handleBookmark(article)}
-                    onTap={() => handleTap(article)}
-                    triggerSaveExit={savingCardId === article.id}
+          {/* Empty */}
+          {!loading && !noPrefs && allCards.length === 0 && (
+            <div className="flex flex-col items-center justify-center px-8 text-center pt-20">
+              <h2 className="text-white font-bold text-[20px] mb-2">You are all caught up</h2>
+              <p className="text-[#444D5A] text-[14px]">Check back later for new stories</p>
+            </div>
+          )}
+
+          {/* ── Desktop feed: hero + 3-grid repeating ──────────────── */}
+          {!loading && allCards.length > 0 && (
+            <div className="hidden md:block px-8 py-8 space-y-8 max-w-[900px] mx-auto">
+              {desktopBlocks.map((block, idx) => (
+                <div key={idx} className="space-y-5">
+                  <DesktopCard
+                    article={block.hero}
+                    variant="hero"
+                    isSaved={savedIds.has(block.hero.id)}
+                    isLiked={likedIds.has(block.hero.id)}
+                    onLike={() => handleLike(block.hero)}
+                    onBookmark={() => handleBookmark(block.hero)}
+                    onTap={() => handleTap(block.hero)}
                   />
-                )
-              })}
-            </div>
+                  {block.grid.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {block.grid.map(a => (
+                        <DesktopCard
+                          key={a.id}
+                          article={a}
+                          variant="grid"
+                          isSaved={savedIds.has(a.id)}
+                          isLiked={likedIds.has(a.id)}
+                          onLike={() => handleLike(a)}
+                          onBookmark={() => handleBookmark(a)}
+                          onTap={() => handleTap(a)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
 
-            {/* Swipe hints */}
-            <div className="flex items-center justify-between px-8 mt-3">
-              <div className="flex items-center gap-1.5 text-[#2C3240]">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
-                </svg>
-                <span className="text-[11px] font-medium">Ignore</span>
-              </div>
-              <span className="text-[11px] text-[#2C3240]">tap to read</span>
-              <div className="flex items-center gap-1.5 text-[#2C3240]">
-                <span className="text-[11px] font-medium">Read</span>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" />
-                </svg>
-              </div>
+              {hasMore && (
+                <div ref={sentinelRef} className="py-6 flex justify-center">
+                  {loadingMore && <div className="w-6 h-6 border-2 border-[#00C2A8] border-t-transparent rounded-full animate-spin" />}
+                </div>
+              )}
+              {!hasMore && allCards.length > 0 && (
+                <div className="py-6 text-center text-[12px] text-[#2C3240]">You have reached the end</div>
+              )}
             </div>
-          </>
+          )}
+
+          {/* ── Mobile feed: full-screen swipe cards ───────────────── */}
+          {!loading && allCards.length > 0 && (
+            <div className="md:hidden h-[calc(100dvh-56px)] overflow-y-auto snap-y snap-mandatory">
+              {allCards.map(article => (
+                <MobileSwipeCard
+                  key={article.id}
+                  article={article}
+                  isSaved={savedIds.has(article.id)}
+                  isLiked={likedIds.has(article.id)}
+                  onLike={() => handleLike(article)}
+                  onTap={() => handleTap(article)}
+                  onSwipeLeft={() => handleSwipeLeft(article)}
+                  onSwipeRight={() => handleSwipeRight(article)}
+                />
+              ))}
+              {hasMore && (
+                <div ref={mobileSentinelRef} className="py-6 flex justify-center">
+                  {loadingMore && <div className="w-6 h-6 border-2 border-[#00C2A8] border-t-transparent rounded-full animate-spin" />}
+                </div>
+              )}
+            </div>
+          )}
+        </main>
+
+        {/* Right panel — anonymous users only (logged-in users manage preferences via Profile) */}
+        {isAnon && (
+          <PersonalizePanel
+            isAnon
+            currentSpaceId={currentSpaceId}
+            onSelect={handleDesktopIndustryPick}
+            onLockedClick={() => openSignupLocked('library')}
+          />
         )}
       </div>
 
-      {/* ── Bottom nav ──────────────────────────────────────────────────── */}
-      <EndUserNav />
+      {/* Mobile bottom nav — for logged-in users */}
+      {!isAnon && <EndUserNav />}
 
-      {/* ── Toast ───────────────────────────────────────────────────────── */}
+      {/* First-time mobile overlay */}
+      <MobileSwipeOverlay />
+
+      {/* Toast */}
       {toast && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0 }}
-          className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 bg-[#1E2530] text-white text-[13px] font-medium px-4 py-2.5 rounded-xl shadow-xl border border-[#2C3444]"
-        >
+        <div className="fixed bottom-24 md:bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#1E2530] text-white text-[13px] font-medium px-4 py-2.5 rounded-xl shadow-xl border border-[#2C3444]">
           {toast}
-        </motion.div>
+        </div>
       )}
+
+      {/* Anonymous + personalize modals */}
+      {/* Picker only reachable by logged-in users (anon slider → signup prompt) */}
+      <IndustryPickerModal
+        open={pickerOpen}
+        onSelect={(sid) => { handleDesktopIndustryPick(sid); setPickerOpen(false) }}
+        onClose={() => setPickerOpen(false)}
+        closable
+      />
+
+      <SignUpPromptModal
+        open={signUpPromptOpen}
+        onClose={() => setSignUpPromptOpen(false)}
+        articleTitle={signUpPromptArticle}
+        reason={signUpReason}
+      />
     </div>
   )
 }

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useSession } from '@/lib/useSession'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
+import { SignUpPromptModal } from '@/components/feed/SignUpPromptModal'
+import { addAnonRead, addAnonSaveAttempt } from '@/lib/anon'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -50,60 +52,50 @@ function formatDate(dateStr: string): string {
 // ── Article View ──────────────────────────────────────────────────────────────
 
 export default function ArticleViewPage() {
-  useSession({ required: true })
+  const { user, loading: sessionLoading } = useSession({ required: false })
   const params   = useParams()
   const router   = useRouter()
   const articleId = params.id as string
+
+  const isAnon = !sessionLoading && !user
 
   const [article, setArticle]   = useState<ArticleData | null>(null)
   const [loading, setLoading]   = useState(true)
   const [error, setError]       = useState(false)
   const [isSaved, setIsSaved]   = useState(false)
   const [marking, setMarking]   = useState(false)
+  const [signUpPromptOpen, setSignUpPromptOpen] = useState(false)
 
   useEffect(() => {
     async function load() {
+      if (sessionLoading) return
       setLoading(true)
       setError(false)
       try {
-        const supabase = createBrowserSupabaseClient()
+        // Fetch article via public endpoint (works for both auth and anon)
+        const res = await fetch(`/api/public-article/${articleId}`)
+        if (!res.ok) throw new Error('fetch failed')
+        const { article: data } = await res.json()
+        if (!data) throw new Error('not found')
 
-        // Fetch article with related data
-        const { data, error: fetchErr } = await supabase
-          .from('final_items')
-          .select(`
-            id, title, summary, body, content_type, severity, locality, impact, published_at, thread_id,
-            source_name, source_url,
-            thread:event_threads(id, title),
-            article_tags(tag_id)
-          `)
-          .eq('id', articleId)
-          .single()
-
-        if (fetchErr || !data) throw fetchErr
-
-        // Fetch related thread articles if thread exists
-        let related: { id: string; title: string; published_at: string }[] = []
-        if (data.thread_id) {
-          const { data: relatedData } = await supabase
-            .from('final_items')
-            .select('id, title, published_at')
-            .eq('thread_id', data.thread_id)
-            .neq('id', articleId)
-            .order('published_at', { ascending: false })
-            .limit(4)
-          related = relatedData ?? []
+        // Authenticated users: check saved state via browser client
+        if (user) {
+          const supabase = createBrowserSupabaseClient()
+          const { data: interaction } = await supabase
+            .from('user_interactions')
+            .select('action')
+            .eq('final_item_id', articleId)
+            .maybeSingle()
+          setIsSaved(interaction?.action === 'saved')
         }
 
-        // Check if saved
-        const { data: interaction } = await supabase
-          .from('user_interactions')
-          .select('action')
-          .eq('final_item_id', articleId)
-          .maybeSingle()
+        setArticle(data as ArticleData)
 
-        setIsSaved(interaction?.action === 'saved')
-        setArticle({ ...data, related } as ArticleData)
+        // Anonymous: record read locally for suppression + tag affinity
+        if (!user) {
+          const tagIds = (data.article_tags ?? []).map((t: { tag_id: string }) => t.tag_id)
+          addAnonRead(articleId, tagIds)
+        }
       } catch {
         setError(true)
       } finally {
@@ -111,10 +103,12 @@ export default function ArticleViewPage() {
       }
     }
     if (articleId) load()
-  }, [articleId])
+  }, [articleId, sessionLoading, user])
 
   const markAsRead = useCallback(async () => {
     if (marking) return
+    // Anonymous users already recorded the read on load — no server-side work
+    if (isAnon) return
     setMarking(true)
     try {
       const tagIds = article?.article_tags?.map(t => t.tag_id) ?? []
@@ -139,7 +133,7 @@ export default function ArticleViewPage() {
     } catch (err) {
       console.error('[ArticleView] markAsRead error:', err)
     }
-  }, [articleId, article, marking])
+  }, [articleId, article, marking, isAnon])
 
   const handleBack = useCallback(async () => {
     await markAsRead()
@@ -151,6 +145,13 @@ export default function ArticleViewPage() {
   }, [markAsRead, router])
 
   const toggleBookmark = useCallback(async () => {
+    // Anonymous users can't save — prompt signup instead
+    if (isAnon) {
+      addAnonSaveAttempt(articleId)
+      setSignUpPromptOpen(true)
+      return
+    }
+
     const newSaved = !isSaved
     setIsSaved(newSaved)
     await fetch('/api/interactions', {
@@ -161,7 +162,7 @@ export default function ArticleViewPage() {
         action: newSaved ? 'saved' : 'unsaved',
       }),
     })
-  }, [isSaved, articleId])
+  }, [isSaved, articleId, isAnon])
 
   const handleShare = useCallback(() => {
     if (navigator.share && article) {
@@ -360,6 +361,14 @@ export default function ArticleViewPage() {
         {/* Bottom padding so content clears any safe areas */}
         <div className="h-10" />
       </div>
+
+      {/* ── Anonymous save prompt ──────────────────────────────────────── */}
+      <SignUpPromptModal
+        open={signUpPromptOpen}
+        onClose={() => setSignUpPromptOpen(false)}
+        articleTitle={article.title}
+        reason="save"
+      />
     </div>
   )
 }

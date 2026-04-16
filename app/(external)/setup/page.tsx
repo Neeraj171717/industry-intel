@@ -4,6 +4,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from '@/lib/useSession'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
+import { useAppStore } from '@/store'
+import type { User } from '@/types'
+
+interface Industry {
+  id: string
+  name: string
+  description: string | null
+}
 
 interface Tag {
   id: string
@@ -12,6 +20,8 @@ interface Tag {
 
 type ReadingFormat = 'quick_cards' | 'short_brief' | 'deep_read'
 type AlertIntensity = 'low' | 'medium' | 'high'
+
+const TOTAL_STEPS = 4
 
 const FORMAT_OPTIONS: { value: ReadingFormat; label: string; desc: string; icon: React.ReactNode }[] = [
   {
@@ -55,18 +65,22 @@ const ALERT_OPTIONS: { value: AlertIntensity; label: string; desc: string }[] = 
 
 export default function SetupPage() {
   const { user, loading: sessionLoading } = useSession({ required: true })
+  const { setCurrentUser } = useAppStore()
   const router = useRouter()
 
-  const [step, setStep]               = useState(1)
-  const [topicTags, setTopicTags]     = useState<Tag[]>([])
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [format, setFormat]           = useState<ReadingFormat>('quick_cards')
-  const [intensity, setIntensity]     = useState<AlertIntensity>('medium')
-  const [saving, setSaving]           = useState(false)
-  const [saveError, setSaveError]     = useState<string | null>(null)
-  const [tagsLoading, setTagsLoading] = useState(true)
+  const [step, setStep]                   = useState(1)
+  const [industries, setIndustries]       = useState<Industry[]>([])
+  const [industryLoading, setIndustryLoading] = useState(true)
+  const [selectedIndustryId, setSelectedIndustryId] = useState<string | null>(null)
+  const [topicTags, setTopicTags]         = useState<Tag[]>([])
+  const [tagsLoading, setTagsLoading]     = useState(false)
+  const [selectedIds, setSelectedIds]     = useState<Set<string>>(new Set())
+  const [format, setFormat]               = useState<ReadingFormat>('quick_cards')
+  const [intensity, setIntensity]         = useState<AlertIntensity>('medium')
+  const [saving, setSaving]               = useState(false)
+  const [saveError, setSaveError]         = useState<string | null>(null)
 
-  // Check if preferences already exist — redirect to feed if so
+  // Redirect users who have already completed preferences
   useEffect(() => {
     if (!user) return
     const supabase = createBrowserSupabaseClient()
@@ -80,14 +94,38 @@ export default function SetupPage() {
       })
   }, [user, router])
 
-  // Load topic tags for this space
+  // Load available industries
   useEffect(() => {
-    if (!user?.space_id) return
+    if (!user) return
+    const supabase = createBrowserSupabaseClient()
+    supabase
+      .from('industry_spaces')
+      .select('id, name, description')
+      .eq('status', 'active')
+      .order('name')
+      .then(({ data }: { data: Industry[] | null }) => {
+        setIndustries(data ?? [])
+        // Pre-select the user's current space_id if it was assigned before setup
+        if (user.space_id && (data ?? []).some(s => s.id === user.space_id)) {
+          setSelectedIndustryId(user.space_id)
+        }
+        setIndustryLoading(false)
+      })
+  }, [user])
+
+  // Load topic tags whenever the selected industry changes
+  useEffect(() => {
+    if (!selectedIndustryId) {
+      setTopicTags([])
+      return
+    }
+    setTagsLoading(true)
+    setSelectedIds(new Set()) // reset tag selection when industry changes
     const supabase = createBrowserSupabaseClient()
     supabase
       .from('tags')
       .select('id, name')
-      .eq('space_id', user.space_id)
+      .eq('space_id', selectedIndustryId)
       .eq('type', 'topic')
       .eq('status', 'active')
       .order('name')
@@ -95,7 +133,11 @@ export default function SetupPage() {
         setTopicTags(data ?? [])
         setTagsLoading(false)
       })
-  }, [user])
+  }, [selectedIndustryId])
+
+  const handleIndustryPick = useCallback((id: string) => {
+    setSelectedIndustryId(id)
+  }, [])
 
   const toggleTag = useCallback((id: string) => {
     setSelectedIds(prev => {
@@ -115,19 +157,30 @@ export default function SetupPage() {
   }, [selectedIds.size, topicTags])
 
   const handleComplete = useCallback(async () => {
-    if (!user?.space_id) return
+    if (!user || !selectedIndustryId) return
     setSaving(true)
     setSaveError(null)
     try {
       const supabase = createBrowserSupabaseClient()
       const tagIds = Array.from(selectedIds)
 
-      // Insert user_preferences
+      // 1. Persist the chosen industry on the user record
+      if (user.space_id !== selectedIndustryId) {
+        const { error: userErr } = await supabase
+          .from('users')
+          .update({ space_id: selectedIndustryId, updated_at: new Date().toISOString() })
+          .eq('id', user.id)
+        if (userErr) throw userErr
+        // Keep the in-memory session in sync so downstream screens see the new space
+        setCurrentUser({ ...user, space_id: selectedIndustryId } as User)
+      }
+
+      // 2. Insert user_preferences
       const { error: prefErr } = await supabase
         .from('user_preferences')
         .insert({
           user_id:          user.id,
-          space_id:         user.space_id,
+          space_id:         selectedIndustryId,
           followed_tag_ids: tagIds,
           reading_format:   format,
           alert_intensity:  intensity,
@@ -136,7 +189,7 @@ export default function SetupPage() {
 
       if (prefErr) throw prefErr
 
-      // Insert default tag weights (0.5) for each selected tag
+      // 3. Seed default tag weights (0.5) for each selected tag
       if (tagIds.length > 0) {
         const weightRows = tagIds.map(tag_id => ({
           user_id:           user.id,
@@ -158,7 +211,7 @@ export default function SetupPage() {
     } finally {
       setSaving(false)
     }
-  }, [user, selectedIds, format, intensity, router])
+  }, [user, selectedIndustryId, selectedIds, format, intensity, router, setCurrentUser])
 
   if (sessionLoading) {
     return (
@@ -170,6 +223,10 @@ export default function SetupPage() {
 
   const allSelected = topicTags.length > 0 && selectedIds.size === topicTags.length
 
+  // ── Per-step navigation gates ────────────────────────────────────────────
+  const canAdvanceFromStep1 = !!selectedIndustryId
+  const canAdvanceFromStep2 = selectedIds.size > 0 || topicTags.length === 0
+
   return (
     <div className="min-h-screen bg-[#0D1117] flex flex-col max-w-[430px] mx-auto">
 
@@ -177,23 +234,72 @@ export default function SetupPage() {
       <div className="h-1 bg-[#161B22]">
         <div
           className="h-full bg-[#00C2A8] transition-all duration-500"
-          style={{ width: `${(step / 3) * 100}%` }}
+          style={{ width: `${(step / TOTAL_STEPS) * 100}%` }}
         />
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-6 pb-32">
 
         {/* Step counter */}
-        <p className="text-[12px] text-[#444D5A] font-medium mb-1">Step {step} of 3</p>
+        <p className="text-[12px] text-[#444D5A] font-medium mb-1">Step {step} of {TOTAL_STEPS}</p>
 
-        {/* ── Step 1: Topics ────────────────────────────────────────────── */}
+        {/* ── Step 1: Industry ──────────────────────────────────────────── */}
         {step === 1 && (
           <>
             <h1 className="text-white font-bold text-[26px] mb-1">
               Welcome{user?.name ? `, ${user.name.split(' ')[0]}` : ''}
             </h1>
             <p className="text-[#444D5A] text-[15px] mb-5">
-              Select the topics you want to follow.
+              Which industry would you like to follow?
+            </p>
+
+            {industryLoading && (
+              <div className="space-y-3">
+                {[0, 1, 2, 3].map(i => (
+                  <div key={i} className="h-16 bg-[#161B22] rounded-2xl animate-pulse" />
+                ))}
+              </div>
+            )}
+
+            {!industryLoading && industries.length === 0 && (
+              <div className="bg-[#161B22] border border-[#1E2530] rounded-xl p-5 text-center">
+                <p className="text-[#444D5A] text-[14px]">No industries are available yet.</p>
+              </div>
+            )}
+
+            {!industryLoading && industries.length > 0 && (
+              <div className="space-y-2.5">
+                {industries.map(ind => (
+                  <button
+                    key={ind.id}
+                    onClick={() => handleIndustryPick(ind.id)}
+                    className={`w-full text-left bg-[#161B22] rounded-2xl p-4 border-2 transition-all ${
+                      selectedIndustryId === ind.id ? 'border-[#00C2A8]' : 'border-[#1E2530] hover:border-[#2C3444]'
+                    }`}
+                  >
+                    <p className={`font-semibold text-[16px] mb-0.5 ${selectedIndustryId === ind.id ? 'text-[#00C2A8]' : 'text-white'}`}>
+                      {ind.name}
+                    </p>
+                    {ind.description && (
+                      <p className="text-[13px] text-[#555E6E] leading-relaxed">{ind.description}</p>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ── Step 2: Topics (filtered by chosen industry) ──────────────── */}
+        {step === 2 && (
+          <>
+            <h1 className="text-white font-bold text-[26px] mb-1">Pick your topics</h1>
+            <p className="text-[#444D5A] text-[15px] mb-5">
+              Select the topics within{' '}
+              <span className="text-[#00C2A8] font-medium">
+                {industries.find(i => i.id === selectedIndustryId)?.name ?? 'your industry'}
+              </span>{' '}
+              that you want to follow.
             </p>
 
             {tagsLoading && (
@@ -206,8 +312,8 @@ export default function SetupPage() {
 
             {!tagsLoading && topicTags.length === 0 && (
               <div className="bg-[#161B22] border border-[#1E2530] rounded-xl p-5 text-center">
-                <p className="text-[#444D5A] text-[14px]">No topics have been set up for your space yet.</p>
-                <p className="text-[#444D5A] text-[13px] mt-1">You can skip and set preferences later.</p>
+                <p className="text-[#444D5A] text-[14px]">No topics have been set up for this industry yet.</p>
+                <p className="text-[#444D5A] text-[13px] mt-1">You can continue and set topics later.</p>
               </div>
             )}
 
@@ -241,8 +347,8 @@ export default function SetupPage() {
           </>
         )}
 
-        {/* ── Step 2: Reading Format ────────────────────────────────────── */}
-        {step === 2 && (
+        {/* ── Step 3: Reading Format ────────────────────────────────────── */}
+        {step === 3 && (
           <>
             <h1 className="text-white font-bold text-[26px] mb-1">Reading format</h1>
             <p className="text-[#444D5A] text-[15px] mb-5">How would you like to read your stories?</p>
@@ -272,8 +378,8 @@ export default function SetupPage() {
           </>
         )}
 
-        {/* ── Step 3: Alert Intensity ───────────────────────────────────── */}
-        {step === 3 && (
+        {/* ── Step 4: Alert Intensity ───────────────────────────────────── */}
+        {step === 4 && (
           <>
             <h1 className="text-white font-bold text-[26px] mb-1">Alert intensity</h1>
             <p className="text-[#444D5A] text-[15px] mb-5">How often do you want to be notified?</p>
@@ -305,7 +411,7 @@ export default function SetupPage() {
 
       {/* ── Fixed bottom CTA ──────────────────────────────────────────────── */}
       <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto px-5 py-4 bg-[#0D1117] border-t border-[#1A2030]">
-        {step < 3 ? (
+        {step < TOTAL_STEPS ? (
           <div className="flex gap-3">
             {step > 1 && (
               <button
@@ -317,9 +423,12 @@ export default function SetupPage() {
             )}
             <button
               onClick={() => setStep(s => s + 1)}
-              disabled={step === 1 && selectedIds.size === 0 && topicTags.length > 0}
+              disabled={
+                (step === 1 && !canAdvanceFromStep1) ||
+                (step === 2 && !canAdvanceFromStep2)
+              }
               className={`flex-1 py-3.5 rounded-xl font-semibold text-[15px] transition-all ${
-                (step === 1 && selectedIds.size === 0 && topicTags.length > 0)
+                (step === 1 && !canAdvanceFromStep1) || (step === 2 && !canAdvanceFromStep2)
                   ? 'bg-[#1A2030] text-[#444D5A] cursor-not-allowed'
                   : 'bg-[#00C2A8] text-white'
               }`}
@@ -330,7 +439,7 @@ export default function SetupPage() {
         ) : (
           <div className="flex gap-3">
             <button
-              onClick={() => setStep(2)}
+              onClick={() => setStep(3)}
               className="flex-1 py-3.5 rounded-xl border border-[#1E2530] text-[#888888] font-semibold text-[15px]"
             >
               Back
@@ -348,16 +457,6 @@ export default function SetupPage() {
               ) : 'Take me to my feed'}
             </button>
           </div>
-        )}
-
-        {/* Skip link */}
-        {step === 1 && (
-          <button
-            onClick={() => router.push('/feed')}
-            className="w-full text-center text-[12px] text-[#2C3444] mt-3"
-          >
-            Skip for now
-          </button>
         )}
       </div>
     </div>

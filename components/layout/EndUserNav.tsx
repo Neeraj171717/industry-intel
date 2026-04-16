@@ -25,7 +25,7 @@ const TABS = [
   },
   {
     href: '/profile',
-    label: 'Profile',
+    label: 'Activity',
     icon: (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -39,7 +39,7 @@ export function EndUserNav() {
   const pathname = usePathname()
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[#0D1117] border-t border-[#1E2530]">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#0D1117] border-t border-[#1E2530]">
       <div className="max-w-[430px] mx-auto flex">
         {TABS.map(({ href, label, icon }) => {
           const isActive =

@@ -70,8 +70,44 @@ export async function GET(req: NextRequest) {
 
     // ── Auth ──────────────────────────────────────────────────────────────────
     const { data: { user: authUser } } = await supabase.auth.getUser()
-    if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+    const offset = parseInt(req.nextUrl.searchParams.get('offset') ?? '0', 10)
+
+    // ── Anonymous path ────────────────────────────────────────────────────────
+    // No auth → caller must pass ?space_id=... (picked in the frontend picker)
+    // and optionally ?suppressed=id1,id2,... for no-repeat rules.
+    if (!authUser) {
+      // Anonymous users always get a general feed across all industries.
+      // No industry selection, no tag filtering — sign up for personalisation.
+      const suppressedRaw = req.nextUrl.searchParams.get('suppressed') ?? ''
+      const suppressedSet = new Set(
+        suppressedRaw.split(',').map(s => s.trim()).filter(Boolean),
+      )
+
+      const { data: anonItems } = await supabaseAdmin
+        .from('final_items')
+        .select('id, title, summary, content_type, severity, published_at, author_id, thread_id, source_name, source_url, featured_image')
+        .order('published_at', { ascending: false })
+        .range(offset, offset + PAGE_SIZE * 2 - 1)
+
+      const filtered = (anonItems ?? []).filter(a => !suppressedSet.has(a.id))
+      const page    = filtered.slice(0, PAGE_SIZE)
+      const hasMore = filtered.length > PAGE_SIZE
+
+      const enriched = await enrichPage(
+        page.map(a => ({ ...a, _score: 0 })),
+        new Set<string>(), // no thread-read tracking for anon
+      )
+
+      return NextResponse.json({
+        items: enriched,
+        offset,
+        hasMore,
+        anonymous: true,
+      })
+    }
+
+    // ── Authenticated path ────────────────────────────────────────────────────
     const { data: caller } = await supabaseAdmin
       .from('users')
       .select('id, role, status, space_id')
@@ -85,7 +121,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Account suspended' }, { status: 403 })
     }
 
-    const offset = parseInt(req.nextUrl.searchParams.get('offset') ?? '0', 10)
     const spaceId = caller.space_id as string
     const userId  = caller.id as string
 
@@ -122,18 +157,24 @@ export async function GET(req: NextRequest) {
     // ════════════════════════════════════════════════════════════════════════
     const { data: prefs } = await supabaseAdmin
       .from('user_preferences')
-      .select('followed_tag_ids')
+      .select('followed_tag_ids, space_ids')
       .eq('user_id', userId)
       .single()
 
     const followedTagIds: string[] = prefs?.followed_tag_ids ?? []
+
+    // Resolve space scope: prefer saved space_ids array, fall back to single space_id
+    const spaceIds: string[] =
+      (prefs?.space_ids && (prefs.space_ids as string[]).length > 0)
+        ? prefs.space_ids as string[]
+        : spaceId ? [spaceId] : []
 
     // No-preferences fast path
     if (followedTagIds.length === 0) {
       const { data: recent } = await supabaseAdmin
         .from('final_items')
         .select('id, title, summary, content_type, severity, published_at, author_id, thread_id, source_name, source_url, featured_image')
-        .eq('space_id', spaceId)
+        .in('space_id', spaceIds.length > 0 ? spaceIds : ['null'])
         .not('id', 'in', `(${Array.from(suppressedItemIds).join(',') || 'null'})`)
         .order('published_at', { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1)
@@ -151,11 +192,11 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // Fetch all candidate articles for this space
+    // Fetch all candidate articles across selected spaces
     const { data: allItems } = await supabaseAdmin
       .from('final_items')
       .select('id, title, summary, content_type, severity, published_at, author_id, thread_id, source_name, source_url, featured_image')
-      .eq('space_id', spaceId)
+      .in('space_id', spaceIds.length > 0 ? spaceIds : ['null'])
 
     // Fetch tag associations for candidates
     const candidateIds = (allItems ?? []).map(a => a.id)

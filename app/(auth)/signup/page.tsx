@@ -40,9 +40,8 @@ export default function SignupPage() {
         email: email.trim().toLowerCase(),
         password,
         options: {
-          data: {
-            name: name.trim(),
-          },
+          data: { name: name.trim() },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
       })
 
@@ -190,6 +189,12 @@ export default function SignupPage() {
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
+              {password.length > 0 && password.length < 8 && (
+                <p className="mt-1 text-xs text-red-600">Password must be at least 8 characters.</p>
+              )}
+              {password.length >= 8 && (
+                <p className="mt-1 text-xs text-green-600">Looks good ✓</p>
+              )}
             </div>
 
             {/* Confirm Password */}
