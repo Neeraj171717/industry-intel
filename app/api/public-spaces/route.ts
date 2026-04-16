@@ -22,7 +22,7 @@ export async function GET() {
     // Filter active spaces in JS — PostgREST .eq() filter misbehaves on this table
     const spaces = (data ?? [])
       .filter(s => s.status === 'active')
-      .map(({ status: _s, ...rest }) => rest)
+      .map(({ status, ...rest }) => rest)
 
     return NextResponse.json({ spaces })
   } catch (err) {
