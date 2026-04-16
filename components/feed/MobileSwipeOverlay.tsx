@@ -129,13 +129,14 @@ export function MobileSwipeOverlay() {
 
         {/* Save badge — right swipe */}
         <div
-          className="absolute right-[-8px] top-1/2 -translate-y-1/2 px-3 py-2 rounded-xl border text-[13px] font-semibold transition-all duration-300"
+          className="absolute top-1/2 -translate-y-1/2 px-4 py-2.5 rounded-xl text-[14px] font-bold transition-all duration-300"
           style={{
+            right:       '-16px',
             background:  '#00C2A8',
-            borderColor: '#00C2A8',
             color:       '#fff',
+            boxShadow:   '0 4px 16px rgba(0,194,168,0.55)',
             opacity:     isRight && active ? 1 : 0,
-            transform:   isRight && active ? 'scale(1)' : 'scale(0.7)',
+            transform:   `translateY(-50%) ${isRight && active ? 'scale(1)' : 'scale(0.75)'}`,
           }}
         >
           🔖 Save
@@ -143,13 +144,14 @@ export function MobileSwipeOverlay() {
 
         {/* Skip badge — left swipe */}
         <div
-          className="absolute left-[-8px] top-1/2 -translate-y-1/2 px-3 py-2 rounded-xl border text-[13px] font-semibold transition-all duration-300"
+          className="absolute top-1/2 -translate-y-1/2 px-4 py-2.5 rounded-xl text-[14px] font-bold transition-all duration-300"
           style={{
-            background:  'rgba(80,80,80,0.9)',
-            borderColor: '#555',
-            color:       '#ccc',
+            left:        '-16px',
+            background:  '#E84C4C',
+            color:       '#fff',
+            boxShadow:   '0 4px 16px rgba(232,76,76,0.45)',
             opacity:     isLeft && active ? 1 : 0,
-            transform:   isLeft && active ? 'scale(1)' : 'scale(0.7)',
+            transform:   `translateY(-50%) ${isLeft && active ? 'scale(1)' : 'scale(0.75)'}`,
           }}
         >
           ✕ Skip
