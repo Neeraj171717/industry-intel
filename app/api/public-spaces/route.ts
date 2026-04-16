@@ -23,7 +23,8 @@ export async function GET() {
     const spaces = (data ?? [])
       .filter(s => s.status === 'active')
       .map((item) => {
-  const { status, ...rest } = item;
+  const rest = { ...item };
+  delete rest.status;
   return rest;
 })
 
