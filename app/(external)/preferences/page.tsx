@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { useSession } from '@/lib/useSession'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
 import { DesktopSidebar } from '@/components/feed/DesktopSidebar'
-import { EndUserNav } from '@/components/layout/EndUserNav'
 
 interface Tag { id: string; name: string }
 interface Industry { id: string; name: string; description: string | null }
@@ -210,7 +209,6 @@ export default function PreferencesPage() {
             </div>
           </main>
         </div>
-        <EndUserNav />
       </div>
     )
   }
@@ -219,7 +217,7 @@ export default function PreferencesPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   const pageContent = (
-    <div className="pb-32 md:pb-20 max-w-[860px] md:mx-auto">
+    <div className="pb-28 md:pb-20 max-w-[860px] md:mx-auto">
 
       {/* ── Industry selector ────────────────────────────────────────── */}
       <section className="px-4 md:px-8 pt-6 pb-4">
@@ -448,7 +446,6 @@ export default function PreferencesPage() {
         </div>
       </div>
 
-      <EndUserNav />
     </div>
   )
 }
