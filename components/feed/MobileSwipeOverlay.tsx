@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
 
-const STORAGE_KEY = 'feed:swipe-tutorial-seen-v3'
+const STORAGE_KEY = 'feed:swipe-tutorial-seen-v4'
 
 // ── Step definitions ─────────────────────────────────────────────────────────
 
@@ -48,16 +48,23 @@ const STEPS: Step[] = [
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export function MobileSwipeOverlay() {
+interface Props {
+  triggered: boolean
+}
+
+export function MobileSwipeOverlay({ triggered }: Props) {
   const [show, setShow]     = useState(false)
   const [step, setStep]     = useState(0)
   const [active, setActive] = useState(false)
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
 
+  // Show once when the trigger condition is first met
   useEffect(() => {
+    if (!triggered) return
     if (typeof window === 'undefined') return
-    if (!localStorage.getItem(STORAGE_KEY)) setShow(true)
-  }, [])
+    if (localStorage.getItem(STORAGE_KEY)) return
+    setShow(true)
+  }, [triggered])
 
   // Cycle through steps
   useEffect(() => {

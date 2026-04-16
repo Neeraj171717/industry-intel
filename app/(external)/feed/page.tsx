@@ -299,6 +299,16 @@ export default function FeedPage() {
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const mobileSentinelRef = useRef<HTMLDivElement | null>(null)
 
+  // ── Onboarding trigger tracking ───────────────────────────────────────────
+  // Show the onboarding overlay only after the user scrolls ≥3 cards
+  // OR performs their first interaction (swipe left/right or tap).
+  const [onboardingScrollCount, setOnboardingScrollCount] = useState(0)
+  const [onboardingInteracted, setOnboardingInteracted]   = useState(false)
+  const mobileScrollRef   = useRef<HTMLDivElement | null>(null)
+  const lastSnapIndexRef  = useRef(0)
+
+  const onboardingTriggered = onboardingScrollCount >= 3 || onboardingInteracted
+
   const currentSpaceId = user?.space_id ?? null
 
   function showToast(msg: string) {
@@ -368,7 +378,25 @@ export default function FeedPage() {
     return () => observer.disconnect()
   }, [loadMore, allCards.length])
 
+  // Count how many snap-cards the user has scrolled past on mobile
+  useEffect(() => {
+    const el = mobileScrollRef.current
+    if (!el) return
+    const handleScroll = () => {
+      // Each card is min-h-[calc(100dvh-56px)]; use the container height as the snap unit
+      const cardHeight = el.clientHeight || 1
+      const snapIndex  = Math.round(el.scrollTop / cardHeight)
+      if (snapIndex !== lastSnapIndexRef.current) {
+        lastSnapIndexRef.current = snapIndex
+        setOnboardingScrollCount(prev => prev + 1)
+      }
+    }
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [allCards.length]) // re-attach once cards are rendered
+
   const handleTap = useCallback((article: FeedArticle) => {
+    setOnboardingInteracted(true)
     router.push(`/feed/article/${article.id}`)
   }, [router])
 
@@ -406,6 +434,7 @@ export default function FeedPage() {
   }, [isAnon])
 
   const handleSwipeLeft = useCallback((article: FeedArticle) => {
+    setOnboardingInteracted(true)
     if (isAnon) {
       addAnonIgnored(article.id)
     } else {
@@ -420,6 +449,7 @@ export default function FeedPage() {
   }, [isAnon])
 
   const handleSwipeRight = useCallback((article: FeedArticle) => {
+    setOnboardingInteracted(true)
     handleBookmark(article)
   }, [handleBookmark])
 
@@ -565,7 +595,7 @@ export default function FeedPage() {
 
           {/* ── Mobile feed: full-screen swipe cards ───────────────── */}
           {!loading && allCards.length > 0 && (
-            <div className="md:hidden h-[calc(100dvh-56px)] overflow-y-auto snap-y snap-mandatory">
+            <div ref={mobileScrollRef} className="md:hidden h-[calc(100dvh-56px)] overflow-y-auto snap-y snap-mandatory">
               {allCards.map(article => (
                 <MobileSwipeCard
                   key={article.id}
@@ -602,7 +632,7 @@ export default function FeedPage() {
       {!isAnon && <EndUserNav />}
 
       {/* First-time mobile overlay */}
-      <MobileSwipeOverlay />
+      <MobileSwipeOverlay triggered={onboardingTriggered} />
 
       {/* Toast */}
       {toast && (
