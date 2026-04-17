@@ -298,14 +298,13 @@ export default function FeedPage() {
   const mobileSentinelRef = useRef<HTMLDivElement | null>(null)
 
   // ── Onboarding trigger tracking ───────────────────────────────────────────
-  // Show the onboarding overlay only after the user scrolls ≥3 cards
-  // OR performs their first interaction (swipe left/right or tap).
-  const [onboardingScrollCount, setOnboardingScrollCount] = useState(0)
-  const [onboardingInteracted, setOnboardingInteracted]   = useState(false)
-  const mobileScrollRef   = useRef<HTMLDivElement | null>(null)
-  const lastSnapIndexRef  = useRef(0)
-
-  const onboardingTriggered = onboardingScrollCount >= 3 || onboardingInteracted
+  // Show the onboarding overlay 8 seconds after landing, for anonymous users
+  // only. If the user is actively scrolling when the timer fires, delay by
+  // 600 ms so the modal doesn't interrupt an in-progress gesture.
+  const [onboardingTriggered, setOnboardingTriggered] = useState(false)
+  const isScrollingRef = useRef(false)
+  const scrollIdleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const mobileScrollRef = useRef<HTMLDivElement | null>(null)
 
   const currentSpaceId = user?.space_id ?? null
 
@@ -376,25 +375,43 @@ export default function FeedPage() {
     return () => observer.disconnect()
   }, [loadMore, allCards.length])
 
-  // Count how many snap-cards the user has scrolled past on mobile
+  // Track whether the user is actively scrolling (used to delay modal during gestures)
   useEffect(() => {
     const el = mobileScrollRef.current
     if (!el) return
-    const handleScroll = () => {
-      // Each card is min-h-[calc(100dvh-56px)]; use the container height as the snap unit
-      const cardHeight = el.clientHeight || 1
-      const snapIndex  = Math.round(el.scrollTop / cardHeight)
-      if (snapIndex !== lastSnapIndexRef.current) {
-        lastSnapIndexRef.current = snapIndex
-        setOnboardingScrollCount(prev => prev + 1)
-      }
+    const onScroll = () => {
+      isScrollingRef.current = true
+      if (scrollIdleTimer.current) clearTimeout(scrollIdleTimer.current)
+      scrollIdleTimer.current = setTimeout(() => { isScrollingRef.current = false }, 400)
     }
-    el.addEventListener('scroll', handleScroll, { passive: true })
-    return () => el.removeEventListener('scroll', handleScroll)
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      if (scrollIdleTimer.current) clearTimeout(scrollIdleTimer.current)
+    }
   }, [allCards.length]) // re-attach once cards are rendered
 
+  // 8-second timer: show onboarding only for anonymous users
+  useEffect(() => {
+    // Wait until session is resolved and user is confirmed anonymous
+    if (sessionLoading || user) return
+    // Bail early if already seen (checked here to avoid setting up a timer unnecessarily)
+    if (typeof window !== 'undefined' && localStorage.getItem('feed:swipe-tutorial-seen-v4')) return
+
+    const fire = () => {
+      if (isScrollingRef.current) {
+        // User is mid-scroll — delay by 600 ms and try once more
+        setTimeout(() => setOnboardingTriggered(true), 600)
+      } else {
+        setOnboardingTriggered(true)
+      }
+    }
+
+    const timer = setTimeout(fire, 8000)
+    return () => clearTimeout(timer)
+  }, [sessionLoading, user])
+
   const handleTap = useCallback((article: FeedArticle) => {
-    setOnboardingInteracted(true)
     router.push(`/feed/article/${article.id}`)
   }, [router])
 
@@ -432,7 +449,6 @@ export default function FeedPage() {
   }, [isAnon])
 
   const handleSwipeLeft = useCallback((article: FeedArticle) => {
-    setOnboardingInteracted(true)
     if (isAnon) {
       addAnonIgnored(article.id)
     } else {
@@ -447,7 +463,6 @@ export default function FeedPage() {
   }, [isAnon])
 
   const handleSwipeRight = useCallback((article: FeedArticle) => {
-    setOnboardingInteracted(true)
     handleBookmark(article)
   }, [handleBookmark])
 
