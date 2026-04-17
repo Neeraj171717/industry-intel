@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSession } from '@/lib/useSession'
 import { createBrowserSupabaseClient } from '@/lib/supabase'
@@ -33,6 +33,14 @@ export default function ActivityPage() {
 
   const [stats, setStats]         = useState<ActivityStats>({ read: 0, saved: 0, topics: 0, liked: 0 })
   const [spaceNames, setSpaceNames] = useState<string[]>([])
+  const [loggingOut, setLoggingOut] = useState(false)
+
+  const handleLogout = useCallback(async () => {
+    setLoggingOut(true)
+    const supabase = createBrowserSupabaseClient()
+    await supabase.auth.signOut()
+    router.push('/feed')
+  }, [router])
 
   useEffect(() => {
     if (!user) return
@@ -147,7 +155,18 @@ export default function ActivityPage() {
         </div>
       </div>
 
-      <p className="text-center text-[11px] text-[#2C3444] mt-8">Version 1.0.0</p>
+      {/* ── Logout — mobile only (desktop uses sidebar) ─────────────── */}
+      <div className="md:hidden mx-4 mt-6">
+        <button
+          onClick={handleLogout}
+          disabled={loggingOut}
+          className="w-full py-3.5 rounded-xl border border-[#1E2530] text-[#E84C4C] text-[15px] font-medium transition-all hover:bg-[#E84C4C]/10 active:scale-[0.98] disabled:opacity-50"
+        >
+          {loggingOut ? 'Logging out…' : 'Log out'}
+        </button>
+      </div>
+
+      <p className="text-center text-[11px] text-[#2C3444] mt-6 mb-2">Version 1.0.0</p>
     </div>
   )
 
