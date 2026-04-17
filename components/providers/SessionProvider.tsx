@@ -18,7 +18,22 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const { setCurrentUser, reset } = useAppStore()
 
   useEffect(() => {
-    const supabase = createBrowserSupabaseClient()
+    // Safety net: if onAuthStateChange never fires (e.g. iOS Safari Private
+    // Browsing prevents storage access), mark hydration complete after 3s so
+    // anonymous users are not permanently stuck on a loading screen.
+    const hydrationTimeout = setTimeout(() => {
+      const { isHydrated } = useAppStore.getState()
+      if (!isHydrated) reset()
+    }, 3000)
+
+    let supabase: ReturnType<typeof createBrowserSupabaseClient>
+    try {
+      supabase = createBrowserSupabaseClient()
+    } catch {
+      clearTimeout(hydrationTimeout)
+      reset()
+      return
+    }
 
     async function hydrateUser() {
       console.log('[SessionProvider] fetching /api/me')
@@ -66,6 +81,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     })
 
     return () => {
+      clearTimeout(hydrationTimeout)
       subscription.unsubscribe()
     }
   }, [setCurrentUser, reset])
