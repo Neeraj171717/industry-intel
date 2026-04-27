@@ -87,6 +87,7 @@ export async function GET(req: NextRequest) {
       const { data: anonItems } = await supabaseAdmin
         .from('final_items')
         .select('id, title, summary, content_type, severity, published_at, author_id, thread_id, source_name, source_url, featured_image')
+        .eq('status', 'published')
         .order('published_at', { ascending: false })
         .range(offset, offset + PAGE_SIZE * 2 - 1)
 
