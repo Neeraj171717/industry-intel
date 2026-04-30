@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { SlidersHorizontal } from 'lucide-react'
+import { BookOpen, Bookmark, SlidersHorizontal, X } from 'lucide-react'
 
 const STORAGE_KEY = 'feed:swipe-tutorial-seen-v4'
 
@@ -45,6 +45,14 @@ const STEPS: Step[] = [
     cardOpacity:   1,
   },
 ]
+
+// Per-step icon and accent colour for the label card
+const STEP_META: Record<Step['id'], { icon: React.ReactNode; color: string }> = {
+  right:  { icon: <Bookmark         size={22} />, color: '#00C2A8' },
+  left:   { icon: <X                size={22} />, color: '#E84C4C' },
+  tap:    { icon: <BookOpen         size={22} />, color: '#E8A84C' },
+  slider: { icon: <SlidersHorizontal size={22} />, color: '#00C2A8' },
+}
 
 // ── Component ────────────────────────────────────────────────────────────────
 
@@ -104,9 +112,20 @@ export function MobileSwipeOverlay({ triggered }: Props) {
     <div className="md:hidden fixed inset-0 z-[60] bg-black/88 backdrop-blur-sm flex flex-col items-center justify-center px-6 select-none">
 
       {/* ── Step label ────────────────────────────────────────────────── */}
-      <div className="mb-8 text-center min-h-[56px] flex flex-col items-center justify-center">
-        <p className="text-white font-bold text-[20px] leading-snug mb-1">{current.label}</p>
-        <p className="text-[#666E7A] text-[13px]">{current.sublabel}</p>
+      <div className="mb-8 w-full max-w-[290px]">
+        <div className="bg-white/[0.08] border border-white/10 rounded-2xl px-5 py-4 text-center">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <span style={{ color: STEP_META[current.id].color }}>
+              {STEP_META[current.id].icon}
+            </span>
+            <p className="text-white font-bold text-[19px] leading-snug">
+              {current.label}
+            </p>
+          </div>
+          <p className="text-white/80 text-[14px] leading-relaxed">
+            {current.sublabel}
+          </p>
+        </div>
       </div>
 
       {/* ── Demo area ─────────────────────────────────────────────────── */}
@@ -237,7 +256,7 @@ export function MobileSwipeOverlay({ triggered }: Props) {
         Got it
       </button>
 
-      <p className="mt-3 text-[12px] text-[#333D4D]">Tap anywhere to dismiss</p>
+      <p className="mt-3 text-[12px] text-white/40">Tap anywhere to dismiss</p>
 
       {/* Tap background to dismiss */}
       <div className="absolute inset-0 -z-10" onClick={dismiss} />
