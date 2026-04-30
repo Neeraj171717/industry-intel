@@ -385,3 +385,73 @@ export async function generateAndStoreArticleVector(
 
   console.log(`[Cohere] generateAndStoreArticleVector — stored vector for ${finalItemId}`)
 }
+
+// ─── 5. prepareAiInput ────────────────────────────────────────────────────────
+// 3-tier input preparation for tag suggestions, thread matching, and duplicate
+// detection. Uses full_content when available; falls back to raw_text.
+//
+// Tier 1 — short  (full_content ≤ 1 500 chars): use full_content directly.
+// Tier 2 — medium (1 500 – 4 000 chars):         light summary, 3–5 sentences.
+// Tier 3 — long   (> 4 000 chars):               strong summary, 5–8 sentences.
+// Fallback (full_content null/empty):             use raw_text as-is.
+//
+// Summaries are generated via OpenRouter and used only in-memory — they are
+// NOT stored in the database.
+
+// Max chars of full_content fed into the summarisation prompt.
+// Keeps prompt size reasonable even for very long articles (80 000 char cap).
+const SUMMARISE_INPUT_CAP = 8_000
+
+export async function prepareAiInput(
+  fullContent: string | null | undefined,
+  rawText: string,
+): Promise<string> {
+  const content = fullContent?.trim() ?? ''
+
+  // Fallback — no full_content available
+  if (!content) {
+    console.log('[prepareAiInput] Tier: fallback (no full_content) — using raw_text')
+    return rawText
+  }
+
+  const len = content.length
+
+  // ── Tier 1: short — use directly ─────────────────────────────────────────
+  if (len <= 1_500) {
+    console.log(`[prepareAiInput] Tier 1 (short, ${len} chars) — using full_content directly`)
+    return content
+  }
+
+  // ── Tier 2: medium — light summary ───────────────────────────────────────
+  if (len <= 4_000) {
+    console.log(`[prepareAiInput] Tier 2 (medium, ${len} chars) — generating 3–5 line summary`)
+    const prompt =
+      `Summarize the following article in 3–5 clear sentences. ` +
+      `Focus on what happened, who is involved, and why it matters for industry professionals. ` +
+      `Be factual and concise. Write in third person. No bullet points.\n\n${content}`
+    try {
+      const result = await openRouterChat(prompt)
+      if (result.text.trim()) return result.text.trim()
+    } catch (err) {
+      console.warn('[prepareAiInput] Tier 2 summarisation failed — using first 2000 chars of full_content:', err)
+    }
+    // full_content exists but summary failed — use a safe slice, never raw_text
+    return content.slice(0, 2_000)
+  }
+
+  // ── Tier 3: long — strong summary ────────────────────────────────────────
+  console.log(`[prepareAiInput] Tier 3 (long, ${len} chars) — generating 5–8 line summary`)
+  const excerpt = content.slice(0, SUMMARISE_INPUT_CAP)
+  const prompt =
+    `Summarize the following article in 5–8 clear sentences. ` +
+    `Capture the full context, key facts, main stakeholders, and industry implications. ` +
+    `Be comprehensive but concise. Write in third person. No bullet points.\n\n${excerpt}`
+  try {
+    const result = await openRouterChat(prompt)
+    if (result.text.trim()) return result.text.trim()
+  } catch (err) {
+    console.warn('[prepareAiInput] Tier 3 summarisation failed — using first 2000 chars of full_content:', err)
+  }
+  // full_content exists but summary failed — use a safe slice, never raw_text
+  return content.slice(0, 2_000)
+}

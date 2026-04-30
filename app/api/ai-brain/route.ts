@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-server'
-import { generateEmbedding, suggestTags, matchThread } from '@/lib/gemini'
+import { generateEmbedding, suggestTags, matchThread, prepareAiInput } from '@/lib/gemini'
 import type { Tag, EventThread } from '@/types'
 
 // Allow up to 60 seconds — Gemini calls can take several seconds each.
@@ -221,10 +221,10 @@ export async function POST(req: NextRequest) {
 
   console.log(`[AI Brain] Processing raw_item: ${rawItemId}`)
 
-  // 3. Fetch the raw item
+  // 3. Fetch the raw item (include full_content for 3-tier AI input logic)
   const { data: rawItem, error: fetchError } = await supabaseAdmin
     .from('raw_items')
-    .select('id, space_id, raw_text, ai_processed')
+    .select('id, space_id, raw_text, full_content, ai_processed')
     .eq('id', rawItemId)
     .single()
 
@@ -239,13 +239,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, skipped: true })
   }
 
-  const { raw_text, space_id } = rawItem
+  const { raw_text, full_content, space_id } = rawItem
 
-  // 4. Run all three jobs in parallel — use allSettled so one failure doesn't kill the rest
+  // 4. Prepare AI input using 3-tier logic:
+  //    Tier 1 (≤1500 chars): full_content used directly
+  //    Tier 2 (1500–4000):   light 3–5 sentence summary generated via OpenRouter
+  //    Tier 3 (>4000 chars): strong 5–8 sentence summary generated via OpenRouter
+  //    Fallback:             raw_text (when full_content is null)
+  //    The summary is used only in-memory — not stored in the database.
+  const aiInput = await prepareAiInput(full_content, raw_text)
+
+  // 5. Run all three jobs in parallel — use allSettled so one failure doesn't kill the rest
   const [job1, job2, job3] = await Promise.allSettled([
-    runDuplicateDetection(rawItemId, raw_text),
-    runTagSuggestions(rawItemId, raw_text, space_id),
-    runThreadMatching(rawItemId, raw_text, space_id),
+    runDuplicateDetection(rawItemId, aiInput),
+    runTagSuggestions(rawItemId, aiInput, space_id),
+    runThreadMatching(rawItemId, aiInput, space_id),
   ])
 
   if (job1.status === 'rejected') {

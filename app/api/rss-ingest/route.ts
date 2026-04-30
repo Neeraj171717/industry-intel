@@ -88,19 +88,26 @@ function extractTagContent(block: string, tag: string): string {
 }
 
 // Strips HTML from RSS text fields.
-// Removes <script> and <style> blocks FIRST so their text content (CSS rules,
-// JS code) never leaks into raw_text — previously only their tags were removed.
+// Entities are decoded BEFORE tag-stripping so that HTML-encoded tags
+// (&lt;figure&gt;) become real tags that the strip regex can remove.
+// Without this, the old order (strip tags → decode entities) left encoded
+// tags intact and then decoded them into literal angle-bracket HTML in the output.
+// &amp; is decoded first so double-encoded entities (&amp;nbsp;) also resolve correctly.
 function stripHtml(text: string): string {
-  return text
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
+  // Step 1 — decode entities so encoded tags become real tags
+  const decoded = text
     .replace(/&amp;/g, '&')
+    .replace(/&nbsp;/g, ' ')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+
+  // Step 2 — now strip all real tags (including those just decoded from entities)
+  return decoded
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
@@ -157,11 +164,11 @@ function parseFeed(xml: string): FeedItem[] {
     }
 
     // Extract image from raw HTML BEFORE stripping so <img src> is still present
-    const rawHtml    = extractTagContent(block, 'description') || extractTagContent(block, 'content:encoded')
-    const image       = extractRssImage(rawHtml, block)
-    const description = stripHtml(rawHtml)
+    const rawHtml            = extractTagContent(block, 'description') || extractTagContent(block, 'content:encoded')
+    const image              = extractRssImage(rawHtml, block)
+    const cleanedDescription = stripHtml(rawHtml)
 
-    if (title && link) items.push({ title, link, description, image })
+    if (title && link) items.push({ title, link, description: cleanedDescription, image })
   }
 
   if (items.length > 0) return items
@@ -179,11 +186,11 @@ function parseFeed(xml: string): FeedItem[] {
     const hrefM = block.match(/<link[^>]+href=["']([^"']+)["']/i)
     const link  = hrefM ? hrefM[1] : ''
 
-    const rawHtml    = extractTagContent(block, 'summary') || extractTagContent(block, 'content')
-    const image       = extractRssImage(rawHtml, block)
-    const description = stripHtml(rawHtml)
+    const rawHtml            = extractTagContent(block, 'summary') || extractTagContent(block, 'content')
+    const image              = extractRssImage(rawHtml, block)
+    const cleanedDescription = stripHtml(rawHtml)
 
-    if (title && link) items.push({ title, link, description, image })
+    if (title && link) items.push({ title, link, description: cleanedDescription, image })
   }
 
   return items
@@ -215,8 +222,20 @@ async function insertRawItem(params: {
 }): Promise<string> {
   const { item, sourceId, spaceId } = params
 
-  // Combine title + cleaned description for the AI pipeline to work with
-  const rawText = [item.title, item.description].filter(Boolean).join('\n\n').slice(0, 10_000)
+  // item.description is already HTML-stripped by stripHtml() in parseFeed.
+  // Named explicitly here so it's unambiguous that raw_text is built from
+  // the cleaned version, not the original HTML.
+  const cleanedDescription = item.description
+
+  // Temporary debug: confirm no HTML survives into raw_text
+  console.log(`[RSS Ingest] raw_text debug — title: "${item.title.slice(0, 80)}"`)
+  console.log(`[RSS Ingest] raw_text debug — cleanedDescription[0..200]: "${cleanedDescription.slice(0, 200)}"`)
+
+  // raw_text is a short clean preview (2-3 lines) — the full article body lives
+  // in full_content. AI brain uses the 3-tier logic to decide what to send to
+  // the model, so raw_text only needs to be human-readable as a fallback.
+  const preview = cleanedDescription.slice(0, 400)
+  const rawText = [item.title, preview].filter(Boolean).join('\n\n')
 
   const { data, error } = await supabaseAdmin.from('raw_items').insert({
     space_id:      spaceId,
