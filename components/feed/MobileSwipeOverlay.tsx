@@ -113,18 +113,33 @@ export function MobileSwipeOverlay({ triggered }: Props) {
 
       {/* ── Step label ────────────────────────────────────────────────── */}
       <div className="mb-8 w-full max-w-[290px]">
-        <div className="bg-white/[0.08] border border-white/10 rounded-2xl px-5 py-4 text-center">
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <span style={{ color: STEP_META[current.id].color }}>
-              {STEP_META[current.id].icon}
-            </span>
-            <p className="text-white font-bold text-[19px] leading-snug">
-              {current.label}
+        {/* Solid dark card with a coloured top accent bar — fully readable against the overlay */}
+        <div
+          className="rounded-2xl overflow-hidden"
+          style={{ boxShadow: `0 0 0 2px ${STEP_META[current.id].color}55` }}
+        >
+          {/* Coloured accent strip at the top */}
+          <div
+            className="h-1 w-full"
+            style={{ background: STEP_META[current.id].color }}
+          />
+
+          <div className="bg-[#0D1117] px-5 pt-4 pb-5 text-center">
+            {/* Icon + heading */}
+            <div className="flex items-center justify-center gap-2 mb-3">
+              <span style={{ color: STEP_META[current.id].color }}>
+                {STEP_META[current.id].icon}
+              </span>
+              <p className="text-white font-bold text-[19px] leading-snug">
+                {current.label}
+              </p>
+            </div>
+
+            {/* Description — full-brightness, clearly readable */}
+            <p className="text-[#C8D8E8] text-[14px] leading-relaxed font-medium">
+              {current.sublabel}
             </p>
           </div>
-          <p className="text-white/80 text-[14px] leading-relaxed">
-            {current.sublabel}
-          </p>
         </div>
       </div>
 
