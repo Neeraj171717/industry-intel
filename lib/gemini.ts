@@ -21,10 +21,12 @@ const cohere = new CohereClient({ token: process.env.COHERE_API_KEY! })
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY!
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 const OPENROUTER_MODELS = [
-  'qwen/qwen3-coder:free',
-  'arcee-ai/trinity-large-preview:free',
-  'stepfun/step-3.5-flash:free',
+  'openai/gpt-oss-120b',
+  'nvidia/nemotron-3-super',
+  'z-ai/glm-4.5-air',
 ]
+// Per-model timeout in milliseconds — abort and fall to next model if exceeded
+const MODEL_TIMEOUT_MS = 30_000
 
 // Cohere embed-english-v3.0 outputs 1024 dimensions — truncate input to ~8k chars
 const EMBED_MAX_CHARS = 8_000
@@ -61,6 +63,9 @@ async function openRouterChat(prompt: string): Promise<OpenRouterResult> {
     const modelNum = i + 1
     console.log(`[OpenRouter] Trying model ${modelNum}: ${model}`)
 
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), MODEL_TIMEOUT_MS)
+
     let res: Response
     try {
       res = await fetch(OPENROUTER_URL, {
@@ -74,12 +79,16 @@ async function openRouterChat(prompt: string): Promise<OpenRouterResult> {
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.1,
         }),
+        signal: controller.signal,
       })
     } catch (networkErr) {
-      lastError = `Model ${modelNum} network error: ${String(networkErr)}`
-      console.log(`[OpenRouter] Model ${modelNum} network error, trying next`)
+      clearTimeout(timer)
+      const isTimeout = networkErr instanceof DOMException && networkErr.name === 'AbortError'
+      lastError = `Model ${modelNum} ${isTimeout ? 'timed out' : `network error: ${String(networkErr)}`}`
+      console.log(`[OpenRouter] Model ${modelNum} ${isTimeout ? 'timed out' : 'network error'}, trying next`)
       continue
     }
+    clearTimeout(timer)
 
     console.log(`[OpenRouter] Model ${modelNum} HTTP status: ${res.status}`)
 

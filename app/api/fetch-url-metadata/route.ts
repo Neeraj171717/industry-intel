@@ -168,58 +168,71 @@ export async function POST(req: NextRequest) {
 
     if (finalTitle && finalDescription && process.env.OPENROUTER_API_KEY) {
       console.log('[EditorNotes] Starting generation...')
-      const notesController = new AbortController()
-      const notesTimeout = setTimeout(() => notesController.abort(), 25000)
 
-      try {
-        const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          },
-          body: JSON.stringify({
-            model: 'arcee-ai/trinity-large-preview:free',
-            messages: [
-              {
-                role: 'user',
-                content: `You are a content analyst for a digital marketing industry intelligence platform.\n\nArticle Title: ${finalTitle}\nArticle Summary: ${finalDescription}\n\nIn exactly 3 sentences answer:\n1. Why is this article significant for professionals in this industry?\n2. Who will be most impacted by this development and how?\n3. What background context or urgency should the editor be aware of before publishing this?\n\nBe specific and concise. Do not use bullet points. Write as flowing sentences.`,
-              },
-            ],
-            max_tokens: 300,
-          }),
-          signal: notesController.signal,
-        })
+      const NOTES_MODELS = [
+        'openai/gpt-oss-120b',
+        'nvidia/nemotron-3-super',
+        'z-ai/glm-4.5-air',
+      ]
+      const notesPrompt = `You are a content analyst for a digital marketing industry intelligence platform.\n\nArticle Title: ${finalTitle}\nArticle Summary: ${finalDescription}\n\nIn exactly 3 sentences answer:\n1. Why is this article significant for professionals in this industry?\n2. Who will be most impacted by this development and how?\n3. What background context or urgency should the editor be aware of before publishing this?\n\nBe specific and concise. Do not use bullet points. Write as flowing sentences.`
 
-        // Clear timeout after response headers arrive — body reading has no time pressure
-        clearTimeout(notesTimeout)
-        console.log('[EditorNotes] Response received — status:', aiRes.status)
+      for (let i = 0; i < NOTES_MODELS.length; i++) {
+        const model = NOTES_MODELS[i]
+        console.log(`[EditorNotes] Trying model ${i + 1}/${NOTES_MODELS.length}: ${model}`)
 
-        if (aiRes.ok) {
+        const notesController = new AbortController()
+        const notesTimeout = setTimeout(() => notesController.abort(), 25000)
+
+        try {
+          const aiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+            },
+            body: JSON.stringify({
+              model,
+              messages: [{ role: 'user', content: notesPrompt }],
+              max_tokens: 300,
+            }),
+            signal: notesController.signal,
+          })
+
+          clearTimeout(notesTimeout)
+          console.log(`[EditorNotes] Model ${i + 1} response status:`, aiRes.status)
+
+          if (!aiRes.ok) {
+            console.log(`[EditorNotes] Model ${i + 1} failed — HTTP ${aiRes.status}, trying next`)
+            continue
+          }
+
           const aiRaw = await aiRes.text()
           const aiData = JSON.parse(aiRaw)
           const text = aiData.choices?.[0]?.message?.content?.trim()
+
           if (text) {
             editorNotes = text
-            console.log('[EditorNotes] Notes generated successfully —', text.length, 'chars')
+            console.log('[EditorNotes] Notes generated successfully —', text.length, 'chars, model:', model)
 
             // Record token usage (fire-and-forget)
-            const notesPrompt = `Article Title: ${finalTitle}\nArticle Summary: ${finalDescription}`
             const usage = extractOpenRouterUsage({ ...aiData, _promptLength: Math.ceil(notesPrompt.length / 4) })
             recordTokenUsage({
-              jobType: 'editor_notes', model: 'arcee-ai/trinity-large-preview:free',
+              jobType: 'editor_notes', model,
               promptTokens: usage.promptTokens, completionTokens: usage.completionTokens,
             }).catch(() => {})
-          } else {
-            console.log('[EditorNotes] Generation failed — empty content in response')
+
+            break
           }
-        } else {
-          console.log('[EditorNotes] Generation failed — HTTP', aiRes.status)
+
+          console.log(`[EditorNotes] Model ${i + 1} returned empty content — trying next`)
+        } catch (err) {
+          clearTimeout(notesTimeout)
+          const isTimeout = err instanceof DOMException && err.name === 'AbortError'
+          console.log(`[EditorNotes] Model ${i + 1} ${isTimeout ? 'timed out' : 'failed'} — trying next`)
         }
-      } catch {
-        clearTimeout(notesTimeout)
-        console.log('[EditorNotes] Generation failed — leaving empty')
       }
+
+      if (!editorNotes) console.log('[EditorNotes] All models failed — leaving empty')
     }
 
     const metadata: UrlMetadata = {
