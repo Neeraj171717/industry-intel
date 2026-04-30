@@ -7,7 +7,7 @@ import { createBrowserSupabaseClient } from '@/lib/supabase'
 import { SignUpPromptModal } from '@/components/feed/SignUpPromptModal'
 import { DesktopSidebar } from '@/components/feed/DesktopSidebar'
 import { EndUserNav } from '@/components/layout/EndUserNav'
-import { addAnonRead, addAnonSaveAttempt } from '@/lib/anon'
+import { addAnonRead, addAnonSaveAttempt, getAnonLikedIds, toggleAnonLike } from '@/lib/anon'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -62,6 +62,18 @@ function ShareIcon() {
   )
 }
 
+function HeartIcon({ filled }: { filled: boolean }) {
+  return filled ? (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="#E84C4C" stroke="#E84C4C" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    </svg>
+  ) : (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    </svg>
+  )
+}
+
 function BookmarkIcon({ filled }: { filled: boolean }) {
   return filled ? (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="#00C2A8" stroke="#00C2A8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -96,6 +108,7 @@ export default function ArticleViewPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(false)
   const [isSaved, setIsSaved] = useState(false)
+  const [isLiked, setIsLiked] = useState(false)
   const [marking, setMarking] = useState(false)
 
   const [signUpPromptOpen, setSignUpPromptOpen] = useState(false)
@@ -114,12 +127,23 @@ export default function ArticleViewPage() {
 
         if (user) {
           const supabase = createBrowserSupabaseClient()
-          const { data: interaction } = await supabase
-            .from('user_interactions')
-            .select('action')
-            .eq('final_item_id', articleId)
-            .maybeSingle()
+          const [{ data: interaction }, { data: likeData }] = await Promise.all([
+            supabase
+              .from('user_interactions')
+              .select('action')
+              .eq('final_item_id', articleId)
+              .maybeSingle(),
+            supabase
+              .from('article_likes')
+              .select('id')
+              .eq('user_id', user.id)
+              .eq('final_item_id', articleId)
+              .maybeSingle(),
+          ])
           setIsSaved(interaction?.action === 'saved')
+          setIsLiked(!!likeData)
+        } else {
+          setIsLiked(getAnonLikedIds().includes(articleId))
         }
 
         setArticle(data as ArticleData)
@@ -180,6 +204,21 @@ export default function ArticleViewPage() {
       body: JSON.stringify({ final_item_id: articleId, action: newSaved ? 'saved' : 'unsaved' }),
     })
   }, [isSaved, articleId, isAnon])
+
+  const toggleLike = useCallback(async () => {
+    if (isAnon) {
+      const nowLiked = toggleAnonLike(articleId)
+      setIsLiked(nowLiked)
+      return
+    }
+    const newLiked = !isLiked
+    setIsLiked(newLiked)
+    void fetch('/api/likes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ final_item_id: articleId }),
+    })
+  }, [isLiked, articleId, isAnon])
 
   const handleShare = useCallback(() => {
     if (navigator.share && article) {
@@ -278,6 +317,14 @@ export default function ArticleViewPage() {
           <BackIcon />
         </button>
         <div className="flex items-center gap-2">
+          <button
+            onClick={toggleLike}
+            className="p-1.5 transition-colors"
+            style={{ color: isLiked ? '#E84C4C' : '#888888' }}
+            aria-label={isLiked ? 'Unlike' : 'Like'}
+          >
+            <HeartIcon filled={isLiked} />
+          </button>
           <button onClick={handleShare} className="p-1.5 text-[#888888] hover:text-white transition-colors" aria-label="Share">
             <ShareIcon />
           </button>
@@ -309,6 +356,14 @@ export default function ArticleViewPage() {
               <span>Feed</span>
             </button>
             <div className="flex items-center gap-1">
+              <button
+                onClick={toggleLike}
+                className="p-2 hover:bg-[#161B22] rounded-lg transition-colors"
+                style={{ color: isLiked ? '#E84C4C' : '#888888' }}
+                aria-label={isLiked ? 'Unlike' : 'Like'}
+              >
+                <HeartIcon filled={isLiked} />
+              </button>
               <button
                 onClick={handleShare}
                 className="p-2 text-[#888888] hover:text-white hover:bg-[#161B22] rounded-lg transition-colors"

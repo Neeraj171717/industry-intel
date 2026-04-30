@@ -46,20 +46,28 @@ export default function ActivityPage() {
     if (!user) return
     const supabase = createBrowserSupabaseClient()
 
-    // Interactions: read, saved, liked counts
+    // Read + saved counts from user_interactions
     supabase
       .from('user_interactions')
       .select('action')
       .eq('user_id', user.id)
-      .in('action', ['read', 'saved', 'liked'])
+      .in('action', ['read', 'saved'])
       .then(({ data }: { data: Array<{ action: string }> | null }) => {
         const rows = data ?? []
         setStats(prev => ({
           ...prev,
           read:  rows.filter(r => r.action === 'read').length,
           saved: rows.filter(r => r.action === 'saved').length,
-          liked: rows.filter(r => r.action === 'liked').length,
         }))
+      })
+
+    // Liked count from article_likes (separate table — avoids UNIQUE conflict with saved)
+    supabase
+      .from('article_likes')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .then(({ count }: { count: number | null }) => {
+        setStats(prev => ({ ...prev, liked: count ?? 0 }))
       })
 
     // Topic count + selected space IDs

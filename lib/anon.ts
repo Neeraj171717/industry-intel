@@ -8,6 +8,7 @@ const KEY_SPACE_ID    = 'anon:space_id'
 const KEY_READ_IDS    = 'anon:read_ids'
 const KEY_IGNORED_IDS = 'anon:ignored_ids'
 const KEY_SAVED_IDS   = 'anon:saved_ids'   // tracks attempted saves (gated)
+const KEY_LIKED_IDS   = 'anon:liked_ids'   // tracks liked articles (stored locally)
 const KEY_TAG_READS   = 'anon:tag_reads'   // Record<tag_id, count>
 const KEY_CREATED_AT  = 'anon:created_at'
 
@@ -98,12 +99,33 @@ export function addAnonSaveAttempt(articleId: string): void {
   }
 }
 
+export function getAnonLikedIds(): string[] {
+  if (!isBrowser()) return []
+  return safeParse<string[]>(localStorage.getItem(KEY_LIKED_IDS), [])
+}
+
+// Toggles a like in localStorage. Returns true if now liked, false if now unliked.
+export function toggleAnonLike(articleId: string): boolean {
+  if (!isBrowser()) return false
+  const liked = safeParse<string[]>(localStorage.getItem(KEY_LIKED_IDS), [])
+  const idx = liked.indexOf(articleId)
+  if (idx >= 0) {
+    liked.splice(idx, 1)
+    localStorage.setItem(KEY_LIKED_IDS, JSON.stringify(liked))
+    return false
+  }
+  liked.push(articleId)
+  localStorage.setItem(KEY_LIKED_IDS, JSON.stringify(liked))
+  return true
+}
+
 export function clearAnonState(): void {
   if (!isBrowser()) return
   localStorage.removeItem(KEY_SPACE_ID)
   localStorage.removeItem(KEY_READ_IDS)
   localStorage.removeItem(KEY_IGNORED_IDS)
   localStorage.removeItem(KEY_SAVED_IDS)
+  localStorage.removeItem(KEY_LIKED_IDS)
   localStorage.removeItem(KEY_TAG_READS)
   localStorage.removeItem(KEY_CREATED_AT)
   // Clean up any stale anon:followed_tag_ids left from a previous version

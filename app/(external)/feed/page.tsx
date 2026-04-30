@@ -14,6 +14,8 @@ import { SignUpPromptModal } from '@/components/feed/SignUpPromptModal'
 import {
   addAnonIgnored,
   addAnonSaveAttempt,
+  getAnonLikedIds,
+  toggleAnonLike,
   getSuppressedIds,
 } from '@/lib/anon'
 
@@ -349,6 +351,21 @@ export default function FeedPage() {
     fetchFeed()
   }, [sessionLoading, user, fetchFeed])
 
+  // Load liked IDs from DB (logged-in) or localStorage (anon)
+  useEffect(() => {
+    if (sessionLoading) return
+    if (user) {
+      fetch('/api/likes')
+        .then(r => r.json())
+        .then(({ liked_ids }: { liked_ids?: string[] }) => {
+          setLikedIds(new Set(liked_ids ?? []))
+        })
+        .catch(() => { /* silently fail — UI stays with empty set */ })
+    } else {
+      setLikedIds(new Set(getAnonLikedIds()))
+    }
+  }, [sessionLoading, user])
+
   const loadMore = useCallback(async () => {
     if (!hasMore || loadingMore || loading) return
     const url = buildFeedUrl(allCards.length)
@@ -416,19 +433,29 @@ export default function FeedPage() {
   }, [router])
 
   const handleLike = useCallback((article: FeedArticle) => {
+    if (isAnon) {
+      // Anonymous: persist in localStorage, update UI
+      const nowLiked = toggleAnonLike(article.id)
+      setLikedIds(prev => {
+        const next = new Set(prev)
+        if (nowLiked) next.add(article.id)
+        else next.delete(article.id)
+        return next
+      })
+      return
+    }
+    // Logged-in: optimistic update, then persist to DB
     setLikedIds(prev => {
       const next = new Set(prev)
       if (next.has(article.id)) next.delete(article.id)
       else next.add(article.id)
       return next
     })
-    if (!isAnon) {
-      void fetch('/api/interactions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ final_item_id: article.id, action: 'liked' }),
-      })
-    }
+    void fetch('/api/likes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ final_item_id: article.id }),
+    })
   }, [isAnon])
 
   const handleBookmark = useCallback((article: FeedArticle) => {
