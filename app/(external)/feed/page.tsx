@@ -169,13 +169,14 @@ interface MobileSwipeCardProps {
   article: FeedArticle
   isSaved: boolean
   isLiked: boolean
+  isAnon: boolean
   onLike: () => void
   onTap: () => void
   onSwipeLeft: () => void
   onSwipeRight: () => void
 }
 
-function MobileSwipeCard({ article, isSaved, isLiked, onLike, onTap, onSwipeLeft, onSwipeRight }: MobileSwipeCardProps) {
+function MobileSwipeCard({ article, isSaved, isLiked, isAnon, onLike, onTap, onSwipeLeft, onSwipeRight }: MobileSwipeCardProps) {
   const [exited, setExited] = useState<null | 'left' | 'right'>(null)
   const badgeClass = SEVERITY_BADGE[article.severity ?? 'low'] ?? SEVERITY_BADGE.low
   const cardRef = useRef<HTMLDivElement>(null)
@@ -191,8 +192,19 @@ function MobileSwipeCard({ article, isSaved, isLiked, onLike, onTap, onSwipeLeft
     const dy = info.offset.y
     // Only treat as swipe if horizontal movement dominates
     if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > threshold) {
-      if (dx > 0) { setExited('right'); setTimeout(onSwipeRight, 180) }
-      else { setExited('left'); setTimeout(onSwipeLeft, 180) }
+      if (dx > 0) {
+        if (isAnon) {
+          // Anonymous: bounce card back (don't set exited), then show login prompt
+          onSwipeRight()
+        } else {
+          // Logged-in: animate card out, then save
+          setExited('right')
+          setTimeout(onSwipeRight, 180)
+        }
+      } else {
+        setExited('left')
+        setTimeout(onSwipeLeft, 180)
+      }
     }
   }
 
@@ -258,6 +270,7 @@ function MobileSwipeCard({ article, isSaved, isLiked, onLike, onTap, onSwipeLeft
             </span>
             <button
               onClick={(e) => { e.stopPropagation(); onLike() }}
+              onPointerDown={(e) => e.stopPropagation()}
               aria-label={isLiked ? 'Unlike' : 'Like'}
               className="p-2 -mr-2"
               style={{ color: isLiked ? '#E84C4C' : '#666' }}
@@ -490,8 +503,23 @@ export default function FeedPage() {
   }, [isAnon])
 
   const handleSwipeRight = useCallback((article: FeedArticle) => {
-    handleBookmark(article)
-  }, [handleBookmark])
+    if (isAnon) {
+      // Card already bounced back (no exit animation was triggered).
+      // Only show the prompt — do NOT record a save attempt or remove the card.
+      setSignUpReason('save')
+      setSignUpPromptArticle(article.headline)
+      setSignUpPromptOpen(true)
+      return
+    }
+    // Logged-in: card is already animating out, complete the save.
+    setSavedIds(prev => new Set(Array.from(prev).concat(article.id)))
+    showToast('Saved to Library')
+    void fetch('/api/interactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ final_item_id: article.id, action: 'saved' }),
+    })
+  }, [isAnon])
 
   const handleDesktopIndustryPick = useCallback((spaceId: string) => {
     if (!user) return
@@ -642,6 +670,7 @@ export default function FeedPage() {
                   article={article}
                   isSaved={savedIds.has(article.id)}
                   isLiked={likedIds.has(article.id)}
+                  isAnon={isAnon}
                   onLike={() => handleLike(article)}
                   onTap={() => handleTap(article)}
                   onSwipeLeft={() => handleSwipeLeft(article)}
