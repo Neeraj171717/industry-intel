@@ -103,10 +103,9 @@ export function MobileSwipeOverlay({ triggered }: Props) {
   if (!show) return null
 
   const current = STEPS[step]
-  const isRight  = current.id === 'right'
-  const isLeft   = current.id === 'left'
-  const isTap    = current.id === 'tap'
-  const isSlider = current.id === 'slider'
+  const isRight = current.id === 'right'
+  const isLeft  = current.id === 'left'
+  const isTap   = current.id === 'tap'
 
   return (
     <div className="md:hidden fixed inset-0 z-[60] bg-black/88 backdrop-blur-sm flex flex-col items-center justify-center px-6 select-none">
@@ -145,28 +144,6 @@ export function MobileSwipeOverlay({ triggered }: Props) {
 
       {/* ── Demo area ─────────────────────────────────────────────────── */}
       <div className="relative w-full max-w-[290px] flex items-center justify-center" style={{ minHeight: 200 }}>
-
-        {/* Slider icon badge — step 4 */}
-        <div
-          className="absolute -top-10 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-1.5 rounded-full border transition-all duration-500"
-          style={{
-            background:   isSlider && active ? 'rgba(0,194,168,0.18)' : 'rgba(0,0,0,0)',
-            borderColor:  isSlider && active ? 'rgba(0,194,168,0.5)'  : 'transparent',
-            opacity:      isSlider ? 1 : 0,
-            transform:    isSlider && active ? 'scale(1.08)' : 'scale(1)',
-          }}
-        >
-          <SlidersHorizontal
-            size={16}
-            style={{ color: isSlider && active ? '#00C2A8' : '#555' }}
-          />
-          <span
-            className="text-[13px] font-semibold transition-colors duration-300"
-            style={{ color: isSlider && active ? '#00C2A8' : '#555' }}
-          >
-            Slider
-          </span>
-        </div>
 
         {/* Save badge — right swipe */}
         <div
