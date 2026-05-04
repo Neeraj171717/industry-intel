@@ -176,7 +176,7 @@ interface MobileSwipeCardProps {
   onSwipeRight: () => void
 }
 
-function MobileSwipeCard({ article, isSaved, isLiked, isAnon, onLike, onTap, onSwipeLeft, onSwipeRight }: MobileSwipeCardProps) {
+function MobileSwipeCard({ article, isLiked, isAnon, onLike, onTap, onSwipeLeft, onSwipeRight }: MobileSwipeCardProps) {
   const [exited, setExited] = useState<null | 'left' | 'right'>(null)
   const badgeClass = SEVERITY_BADGE[article.severity ?? 'low'] ?? SEVERITY_BADGE.low
   const cardRef = useRef<HTMLDivElement>(null)
