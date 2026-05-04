@@ -437,7 +437,7 @@ export default function FeedPage() {
       }
     }
 
-    const timer = setTimeout(fire, 8000)
+    const timer = setTimeout(fire, 15000)
     return () => clearTimeout(timer)
   }, [sessionLoading, user])
 
