@@ -103,8 +103,6 @@ export function MobileSwipeOverlay({ triggered }: Props) {
   if (!show) return null
 
   const current = STEPS[step]
-  const isRight = current.id === 'right'
-  const isLeft  = current.id === 'left'
   const isTap   = current.id === 'tap'
 
   return (
@@ -144,36 +142,6 @@ export function MobileSwipeOverlay({ triggered }: Props) {
 
       {/* ── Demo area ─────────────────────────────────────────────────── */}
       <div className="relative w-full max-w-[290px] flex items-center justify-center" style={{ minHeight: 200 }}>
-
-        {/* Save badge — right swipe */}
-        <div
-          className="absolute top-1/2 -translate-y-1/2 px-4 py-2.5 rounded-xl text-[14px] font-bold transition-all duration-300"
-          style={{
-            right:       '-16px',
-            background:  '#00C2A8',
-            color:       '#fff',
-            boxShadow:   '0 4px 16px rgba(0,194,168,0.55)',
-            opacity:     isRight && active ? 1 : 0,
-            transform:   `translateY(-50%) ${isRight && active ? 'scale(1)' : 'scale(0.75)'}`,
-          }}
-        >
-          🔖 Save
-        </div>
-
-        {/* Skip badge — left swipe */}
-        <div
-          className="absolute top-1/2 -translate-y-1/2 px-4 py-2.5 rounded-xl text-[14px] font-bold transition-all duration-300"
-          style={{
-            left:        '-16px',
-            background:  '#E84C4C',
-            color:       '#fff',
-            boxShadow:   '0 4px 16px rgba(232,76,76,0.45)',
-            opacity:     isLeft && active ? 1 : 0,
-            transform:   `translateY(-50%) ${isLeft && active ? 'scale(1)' : 'scale(0.75)'}`,
-          }}
-        >
-          ✕ Skip
-        </div>
 
         {/* Mock feed card */}
         <div
