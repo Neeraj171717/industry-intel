@@ -279,10 +279,7 @@ function MobileSwipeCard({ article, isSaved, isLiked, isAnon, onLike, onTap, onS
             </button>
           </div>
 
-          <div className="flex items-center justify-between mt-2 text-[11px] text-[#2C3444]">
-            <span className="flex items-center gap-1">← skip</span>
-            <span className="flex items-center gap-1">{isSaved ? 'saved' : 'save →'}</span>
-          </div>
+          
         </div>
       </div>
     </motion.div>
